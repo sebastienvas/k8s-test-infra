@@ -1,4 +1,4 @@
-# Copyright 2016 The Kubernetes Authors.
+# Copyright 2017 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,11 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This file creates a build environment for building and running kubernetes
-# unit and integration tests
+# note: sync this with planter.sh!
+# this should be bazel version - planter sub version
+VERSION = 0.5.4-1
+IMAGE_NAME = "gcr.io/k8s-testimages/planter"
 
-FROM gcr.io/k8s-testimages/kubekins-e2e:v20170901-85a12b8a
-MAINTAINER  Sen Lu <senlu@google.com>
+image:
+	docker build -t "$(IMAGE_NAME):$(VERSION)" . --pull
 
-ADD runner /
-ENTRYPOINT ["/bin/bash", "/runner"]
+push: image
+	gcloud docker -- push "$(IMAGE_NAME):$(VERSION)"
+
+.PHONY: image push

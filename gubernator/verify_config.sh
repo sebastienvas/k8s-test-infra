@@ -1,4 +1,5 @@
-# Copyright 2016 The Kubernetes Authors.
+#!/bin/bash
+# Copyright 2017 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,11 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This file creates a build environment for building and running kubernetes
-# unit and integration tests
+# This script verifies the Gubernator configuration
+# file is in sync with Prow.
 
-FROM gcr.io/k8s-testimages/kubekins-e2e:v20170901-85a12b8a
-MAINTAINER  Sen Lu <senlu@google.com>
+cd "$( dirname "${BASH_SOURCE[0]}" )"
+config="$( mktemp )"
+trap "rm ${config}" EXIT
 
-ADD runner /
-ENTRYPOINT ["/bin/bash", "/runner"]
+cp ./config.yaml "${config}"
+./update_config.py ./../prow/config.yaml "${config}"
+
+if ! output="$( diff ./config.yaml "${config}" )"; then
+    echo "Gubernator configuration file is out of sync!"
+    echo "${output}"
+    echo "Run gubernator/update-config.sh"
+    exit 1
+fi

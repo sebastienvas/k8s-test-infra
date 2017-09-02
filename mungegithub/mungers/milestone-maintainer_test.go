@@ -111,11 +111,11 @@ func TestMilestoneMaintainer(t *testing.T) {
 	server.Close()
 }
 
-func milestoneTestComment(label string, createdAt time.Time) *c.Comment {
+func milestoneTestComment(label string, context string, createdAt time.Time) *c.Comment {
 	n := &c.Notification{
 		Name:      milestoneNotifierName,
 		Arguments: label,
-		Context:   "foo",
+		Context:   context,
 	}
 	return &c.Comment{
 		Body:      stringPtr(n.String()),
@@ -166,7 +166,7 @@ func TestNotificationState(t *testing.T) {
 		},
 		"Do nothing for up-to-date summary": {
 			labels:        []string{"kind/bug", "priority/important-soon", "sig/foo"},
-			comment:       milestoneTestComment(milestoneLabelsComplete, createdNow),
+			comment:       milestoneTestComment(milestoneLabelsComplete, "foo", createdNow),
 			expectedLabel: milestoneLabelsCompleteLabel,
 		},
 		"Label and warn for the first time": {
@@ -175,7 +175,7 @@ func TestNotificationState(t *testing.T) {
 		},
 		"Non-blocker is removed from milestone after grace period": {
 			labels:              []string{milestoneLabelsIncompleteLabel},
-			comment:             milestoneTestComment(milestoneLabelsIncomplete, createdYesterday),
+			comment:             milestoneTestComment(milestoneLabelsIncomplete, "foo", createdYesterday),
 			events:              milestoneLabelEvents(milestoneLabelsIncompleteLabel, createdLongAgo),
 			expectedLabel:       milestoneRemovedLabel,
 			expectedDescription: milestoneRemoved,
@@ -237,36 +237,53 @@ func TestWarningIsCurrent(t *testing.T) {
 	warningInterval := day
 	createdYesterday := createdNow.Add(-(warningInterval + time.Hour))
 
+	realSample := "@erictune @jcbsmpsn @liggitt\n\n**Action required**: This issue requires label changes.  If the required changes are not made within 6 days, the issue will be moved out of the v1.8 milestone.\n\nkind: Must specify at most one of ['kind/bug', 'kind/feature', 'kind/cleanup'].\npriority: Must specify at most one of ['priority/critical-urgent', 'priority/important-soon', 'priority/important-longterm'].\n\n<details>\nAdditional instructions available <a href=\"https://github.com/kubernetes/community/blob/master/contributors/devel/release/issues.md\">here</a>\n</details>"
+
 	tests := map[string]struct {
-		notification      *c.Notification
+		label             string
 		message           string
-		createdAt         *time.Time
+		createdAt         time.Time
+		newMessage        string
 		expectedIsCurrent bool
 	}{
 		"Not current if no notification exists": {},
 		"Not current if the notification is not a warning": {
-			notification: milestoneTestNotification(milestoneLabelsComplete, ""),
+			label:   milestoneLabelsComplete,
+			message: "foo",
 		},
 		"Not current if the message is different": {
-			notification: milestoneTestNotification(milestoneLabelsIncomplete, "foo"),
-			message:      "bar",
+			label:      milestoneLabelsIncomplete,
+			message:    "foo",
+			newMessage: "bar",
 		},
 		"Not current if the warning interval has elapsed": {
-			notification: milestoneTestNotification(milestoneLabelsIncomplete, "foo"),
-			message:      "foo",
-			createdAt:    &createdYesterday,
+			label:      milestoneLabelsIncomplete,
+			message:    "foo",
+			newMessage: "foo",
+			createdAt:  createdYesterday,
 		},
 		"Warning is current": {
-			notification:      milestoneTestNotification(milestoneLabelsIncomplete, "foo"),
+			label:             milestoneLabelsIncomplete,
 			message:           "foo",
-			createdAt:         &createdNow,
+			newMessage:        "foo",
+			createdAt:         createdNow,
+			expectedIsCurrent: true,
+		},
+		"Warning is current, real sample": {
+			label:             milestoneLabelsIncomplete,
+			createdAt:         createdNow,
+			message:           realSample,
+			newMessage:        realSample,
 			expectedIsCurrent: true,
 		},
 	}
 	for testName, test := range tests {
 		t.Run(testName, func(t *testing.T) {
-			isCurrent := warningIsCurrent(test.notification, test.message, test.createdAt, warningInterval)
+			comment := milestoneTestComment(test.label, test.message, test.createdAt)
+			notification := c.ParseNotification(comment)
+			isCurrent := warningIsCurrent(notification, test.newMessage, &test.createdAt, warningInterval)
 			if test.expectedIsCurrent != isCurrent {
+				t.Logf("notification %#v\n", notification)
 				t.Fatalf("%s: expected warningIsCurrent to be %t, but got %t", testName, test.expectedIsCurrent, isCurrent)
 			}
 		})
