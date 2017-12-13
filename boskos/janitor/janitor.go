@@ -83,7 +83,7 @@ func janitorClean(proj string) error {
 }
 
 type boskosClient interface {
-	Acquire(rtype string, state string, dest string) (string, error)
+	Acquire(rtype string, state string, dest string) (*common.Resource, error)
 	ReleaseOne(name string, dest string) error
 }
 
@@ -104,15 +104,15 @@ func run(c boskosClient, buffer chan string, rtypes []string) int {
 
 	for {
 		for r := range res {
-			if proj, err := c.Acquire(r, "dirty", "cleaning"); err != nil {
+			if projRes, err := c.Acquire(r, "dirty", "cleaning"); err != nil {
 				logrus.WithError(err).Error("boskos acquire failed!")
 				totalAcquire += res[r]
 				delete(res, r)
-			} else if proj == "" {
+			} else if projRes.Name == "" {
 				totalAcquire += res[r]
 				delete(res, r)
 			} else {
-				buffer <- proj // will block until buffer has a free slot
+				buffer <- projRes.Name // will block until buffer has a free slot
 				res[r]++
 			}
 		}

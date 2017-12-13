@@ -74,7 +74,7 @@ service:
 	kubectl apply -f service.yaml
 
 update-config: get-cluster-credentials
-	kubectl create configmap resources --from-file=config=resources.json --dry-run -o yaml | kubectl --namespace="$(NAMESPACE)" replace configmap resources -f -
+	kubectl create configmap resources --from-file=config=config.yaml --dry-run -o yaml | kubectl --namespace="$(NAMESPACE)" replace configmap resources -f -
 
 get-cluster-credentials:
 	gcloud container clusters get-credentials "$(CLUSTER)" --project="$(PROJECT)" --zone="$(ZONE)"

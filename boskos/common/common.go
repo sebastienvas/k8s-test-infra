@@ -23,12 +23,51 @@ import (
 	"time"
 )
 
+// ResourceNeeds maps the type to count of resources types needed
+type ResourceNeeds map[string]int
+
+// TypeToResources stores all the leased resources with the same type f
+type TypeToResources map[string][]*Resource
+
+type TypedContent struct {
+	// Identifier of the struct this maps back to
+	Type string `json:"type,omitempty"`
+	// Marshaled JSON content
+	Content string `json:"content,omitempty"`
+}
+
 type Resource struct {
-	Type       string    `json:"type"`
-	Name       string    `json:"name"`
-	State      string    `json:"state"`
-	Owner      string    `json:"owner"`
-	LastUpdate time.Time `json:"lastupdate"`
+	Type       string       `json:"type"`
+	Name       string       `json:"name"`
+	State      string       `json:"state"`
+	Owner      string       `json:"owner"`
+	LastUpdate time.Time    `json:"lastupdate"`
+	UseConfig  bool         `json:"useconfig,omitempty"`
+	Info       ResourceInfo `json:"info,omitempty"`
+}
+
+type ResourceInfo struct {
+	LeasedResources []string     `json:"leasedresouces,omitempty"`
+	Info            TypedContent `json:"info,omitempty"`
+}
+
+// ResourceEntry is resource config format defined from config.yaml
+type ResourceEntry struct {
+	Type      string   `json:"type"`
+	State     string   `json:"state"`
+	UseConfig bool     `json:"useConfig"`
+	Names     []string `json:"names,flow"`
+}
+
+type ConfigEntry struct {
+	TypedContent
+	Needs ResourceNeeds `json:"needs"`
+	Name  string        `json:"name"`
+}
+
+type BoskosConfig struct {
+	Resources []ResourceEntry `json:"resources,flow"`
+	Configs   []ConfigEntry   `json:"configs,flow,omitempty"`
 }
 
 type Metric struct {

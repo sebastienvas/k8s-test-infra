@@ -24,19 +24,42 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"k8s.io/test-infra/boskos/crds"
 	"k8s.io/test-infra/boskos/ranch"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
+	"k8s.io/test-infra/boskos/common"
 )
 
-var configPath = flag.String("config", "resources.json", "Path to init resource file")
-var storage = flag.String("storage", "", "Path to persistent volume to load the state")
+var configPath = flag.String("config", "config.yaml", "Path to init resource file")
+var kubeConfig = flag.String("kubeconfig", "", "absolute path to the kubeConfig file")
+var namespace = flag.String("namespace", v1.NamespaceDefault, "namespace to install on")
 
 func main() {
 	flag.Parse()
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 
-	r, err := ranch.NewRanch(*configPath, *storage)
+	config, scheme, err := crds.CreateRESTConfig(*kubeConfig)
+
 	if err != nil {
-		logrus.WithError(err).Fatalf("Failed to create ranch! Config: %v, storage : %v", *configPath, *storage)
+		logrus.Fatal(err)
+	}
+	if err := crds.RegisterResources(config); err != nil {
+		logrus.Fatal(err)
+	}
+
+	// creates the clientset
+	restClient, err := rest.RESTClientFor(config)
+	if err != nil {
+		logrus.Fatal(err)
+	}
+
+	rc := crds.NewCRDClient(restClient, scheme, *namespace, crds.ResourceInstancePlural)
+
+	r, err := ranch.NewRanch(*configPath, rc)
+	if err != nil {
+		logrus.WithError(err).Fatalf("Failed to create ranch! Config: %v, kubeconfig : %v", *configPath, *kubeConfig)
 	}
 
 	http.Handle("/", handleDefault(r))
@@ -45,17 +68,15 @@ func main() {
 	http.Handle("/reset", handleReset(r))
 	http.Handle("/update", handleUpdate(r))
 	http.Handle("/metric", handleMetric(r))
+	http.Handle("/getconfig", handleGetConfig(r))
 
 	go func() {
 		logTick := time.NewTicker(time.Minute).C
-		saveTick := time.NewTicker(time.Minute).C
 		configTick := time.NewTicker(time.Minute * 10).C
 		for {
 			select {
 			case <-logTick:
 				r.LogStatus()
-			case <-saveTick:
-				r.SaveState()
 			case <-configTick:
 				r.SyncConfig(*configPath)
 			}
@@ -140,6 +161,52 @@ func handleAcquire(r *ranch.Ranch) http.HandlerFunc {
 	}
 }
 
+//  handleGetConfig: Handler for /getconfig
+//  Method: POST
+// 	URLParams:
+//		Required: name=[string]  : name of the requested config
+func handleGetConfig(r *ranch.Ranch) http.HandlerFunc {
+	return func(res http.ResponseWriter, req *http.Request) {
+		logrus.WithField("handler", "handleStart").Infof("From %v", req.RemoteAddr)
+
+		if req.Method != "POST" {
+			msg := fmt.Sprintf("Method %v, /acquire only accepts POST.", req.Method)
+			logrus.Warning(msg)
+			http.Error(res, msg, http.StatusMethodNotAllowed)
+			return
+		}
+
+		// TODO(krzyzacy) - sanitize user input
+		name := req.URL.Query().Get("name")
+		if name == "" {
+			msg := fmt.Sprint("Name must be set in the request.")
+			logrus.Warning(msg)
+			http.Error(res, msg, http.StatusBadRequest)
+			return
+		}
+
+		logrus.Infof("Request for config %s", name)
+
+		config, err := r.GetConfig(name)
+
+		if err != nil {
+			logrus.WithError(err).Errorf("No available resource")
+			http.Error(res, err.Error(), ErrorToStatus(err))
+			return
+		}
+
+		resJSON, err := json.Marshal(config)
+		if err != nil {
+			logrus.WithError(err).Errorf("json.Marshal failed: %v", config)
+			http.Error(res, err.Error(), ErrorToStatus(err))
+			return
+		}
+		logrus.Infof("Config found: %v", string(resJSON))
+		fmt.Fprint(res, string(resJSON))
+		return
+	}
+}
+
 //  handleRelease: Handler for /release
 //  Method: POST
 //	URL Params:
@@ -216,7 +283,12 @@ func handleReset(r *ranch.Ranch) http.HandlerFunc {
 			return
 		}
 
-		rmap := r.Reset(rtype, state, expire, dest)
+		rmap, err := r.Reset(rtype, state, expire, dest)
+		if err != nil {
+			logrus.WithError(err).Errorf("could not reset states")
+			http.Error(res, err.Error(), http.StatusBadRequest)
+			return
+		}
 		resJSON, err := json.Marshal(rmap)
 		if err != nil {
 			logrus.WithError(err).Errorf("json.Marshal failed: %v", rmap)
@@ -231,9 +303,10 @@ func handleReset(r *ranch.Ranch) http.HandlerFunc {
 //  handleUpdate: Handler for /update
 //  Method: POST
 //  URLParams
-//		Required: name=[string]  : name of target resource
-//		Required: owner=[string] : owner of the resource
-//		Required: state=[string] : current state of the resource
+//		Required: name=[string]       : name of target resource
+//		Required: owner=[string]      : owner of the resource
+//		Required: state=[string]      : current state of the resource
+//		Optional: info=[ResourceInfo] : information about how to use the resource
 func handleUpdate(r *ranch.Ranch) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
 		logrus.WithField("handler", "handleUpdate").Infof("From %v", req.RemoteAddr)
@@ -248,6 +321,18 @@ func handleUpdate(r *ranch.Ranch) http.HandlerFunc {
 		name := req.URL.Query().Get("name")
 		owner := req.URL.Query().Get("owner")
 		state := req.URL.Query().Get("state")
+		var info *common.ResourceInfo
+		if req.Body != nil {
+			defer req.Body.Close()
+			decoder := json.NewDecoder(req.Body)
+			if err := decoder.Decode(info); err != nil {
+				msg := fmt.Sprintf("Unable to parse Body.", req.Body)
+				logrus.Warning(msg)
+				http.Error(res, msg, http.StatusBadRequest)
+				return
+			}
+		}
+
 		if name == "" || owner == "" || state == "" {
 			msg := fmt.Sprintf("Name: %v, owner: %v, state : %v, all of them must be set in the request.", name, owner, state)
 			logrus.Warning(msg)
@@ -255,7 +340,7 @@ func handleUpdate(r *ranch.Ranch) http.HandlerFunc {
 			return
 		}
 
-		if err := r.Update(name, owner, state); err != nil {
+		if err := r.Update(name, owner, state, info); err != nil {
 			logrus.WithError(err).Errorf("Update failed: %v - %v (%v)", name, state, owner)
 			http.Error(res, err.Error(), ErrorToStatus(err))
 			return

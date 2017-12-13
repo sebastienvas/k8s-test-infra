@@ -17,12 +17,18 @@ go_binary(
 go_test(
     name = "go_default_test",
     srcs = ["boskos_test.go"],
-    data = ["resources.json"],
+    data = [
+        "config.yaml",
+        "test-config.yaml",
+    ],
     embed = [":go_default_library"],
     importpath = "k8s.io/test-infra/boskos",
     deps = [
         "//boskos/common:go_default_library",
+        "//boskos/crds:go_default_library",
+        "//boskos/gcp:go_default_library",
         "//boskos/ranch:go_default_library",
+        "//vendor/gopkg.in/yaml.v2:go_default_library",
     ],
 )
 
@@ -31,8 +37,12 @@ go_library(
     srcs = ["boskos.go"],
     importpath = "k8s.io/test-infra/boskos",
     deps = [
+        "//boskos/common:go_default_library",
+        "//boskos/crds:go_default_library",
         "//boskos/ranch:go_default_library",
         "//vendor/github.com/sirupsen/logrus:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
+        "//vendor/k8s.io/client-go/rest:go_default_library",
     ],
 )
 
@@ -48,8 +58,12 @@ filegroup(
     srcs = [
         ":package-srcs",
         "//boskos/client:all-srcs",
+        "//boskos/cmd/mason:all-srcs",
         "//boskos/common:all-srcs",
+        "//boskos/crds:all-srcs",
+        "//boskos/gcp:all-srcs",
         "//boskos/janitor:all-srcs",
+        "//boskos/mason:all-srcs",
         "//boskos/metrics:all-srcs",
         "//boskos/ranch:all-srcs",
         "//boskos/reaper:all-srcs",

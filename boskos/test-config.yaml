@@ -1,0 +1,30 @@
+resources:
+- type: type1
+  state: dirty
+  names:
+  - test-boskos-01
+  - test-boskos-02
+  - test-boskos-03
+- type: type2
+  state: dirty
+  useconfig: true
+  names:
+  - test-boskos-04
+  - test-boskos-05
+  - test-boskos-06
+configs:
+- name: type2
+  needs:
+    type1: 1
+  type: GCPResourceConfig
+  content: |
+    projectsconfig:
+    - type: type1
+      clusters:
+      - machineType: n1-standard-2
+        numNodes: 4
+        version: 1.7
+        zone: us-central-1f
+      vms:
+      - machineType: n1-standard-4
+        image: debian-9-drawfork

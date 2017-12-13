@@ -22,14 +22,23 @@ import (
 	"time"
 
 	"k8s.io/test-infra/boskos/common"
+	"k8s.io/test-infra/boskos/crds"
 )
 
 func MakeTestRanch(resources []common.Resource) *Ranch {
-	newRanch := &Ranch{
-		Resources: resources,
+	var ris []crds.BoskosObject
+	for _, r := range resources {
+		ri := new(crds.ResourceInstance)
+		ri.FromResource(r)
+		ris = append(ris, ri)
+	}
+	newRanch := Ranch{
+		Resources:      resources,
+		ResourceClient: crds.NewCRDDummyClient(crds.ResourceInstancePlural, ris),
+		ConfigClient:   crds.NewCRDDummyClient(crds.ResourceConfigPlural, nil),
 	}
 
-	return newRanch
+	return &newRanch
 }
 
 func AreErrorsEqual(got error, expect error) bool {
@@ -170,7 +179,7 @@ func TestAcquire(t *testing.T) {
 			if res.State != tc.dest {
 				t.Errorf("%s - Wrong final state. Got %v, expect %v", tc.name, res.State, tc.dest)
 			}
-			if *res != c.Resources[0] {
+			if !reflect.DeepEqual(*res, c.Resources[0]) {
 				t.Errorf("%s - Wrong resource. Got %v, expect %v", tc.name, res, c.Resources[0])
 			} else if !res.LastUpdate.After(FakeNow) {
 				t.Errorf("%s - LastUpdate did not update.", tc.name)
@@ -428,7 +437,10 @@ func TestReset(t *testing.T) {
 
 	for _, tc := range testcases {
 		c := MakeTestRanch(tc.resources)
-		rmap := c.Reset(tc.rtype, tc.state, tc.expire, tc.dest)
+		rmap, err := c.Reset(tc.rtype, tc.state, tc.expire, tc.dest)
+		if err != nil {
+			t.Errorf("failed to reset %v", err)
+		}
 
 		if !tc.hasContent {
 			if len(rmap) != 0 {
@@ -531,7 +543,7 @@ func TestUpdate(t *testing.T) {
 
 	for _, tc := range testcases {
 		c := MakeTestRanch(tc.resources)
-		err := c.Update(tc.resName, tc.owner, tc.state)
+		err := c.Update(tc.resName, tc.owner, tc.state, nil)
 		if !AreErrorsEqual(err, tc.expectErr) {
 			t.Errorf("%s - Got error %v, expect error %v", tc.name, err, tc.expectErr)
 			continue
@@ -838,7 +850,7 @@ func TestSyncConfig(t *testing.T) {
 
 	for _, tc := range testcases {
 		c := MakeTestRanch(tc.oldRes)
-		c.syncConfigHelper(tc.newRes)
+		c.syncResources(tc.newRes)
 		if !reflect.DeepEqual(c.Resources, tc.expect) {
 			t.Errorf("Test %v: got %v, expect %v", tc.name, c.Resources, tc.expect)
 		}

@@ -25,16 +25,27 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v2"
 	"k8s.io/test-infra/boskos/common"
+	"k8s.io/test-infra/boskos/crds"
+	"k8s.io/test-infra/boskos/gcp"
 	"k8s.io/test-infra/boskos/ranch"
 )
 
 func MakeTestRanch(resources []common.Resource) *ranch.Ranch {
-	newRanch := &ranch.Ranch{
-		Resources: resources,
+	var ris []crds.BoskosObject
+	for _, r := range resources {
+		ri := new(crds.ResourceInstance)
+		ri.FromResource(r)
+		ris = append(ris, ri)
+	}
+	newRanch := ranch.Ranch{
+		Resources:      resources,
+		ResourceClient: crds.NewCRDDummyClient(crds.ResourceInstancePlural, ris),
+		ConfigClient:   crds.NewCRDDummyClient(crds.ResourceConfigPlural, nil),
 	}
 
-	return newRanch
+	return &newRanch
 }
 
 func TestAcquire(t *testing.T) {
@@ -743,27 +754,67 @@ func TestDefault(t *testing.T) {
 	}
 }
 
-func TestProjectConfig(t *testing.T) {
-	r := MakeTestRanch([]common.Resource{})
-	data, err := r.ParseConfig("resources.json")
+func TestConfig(t *testing.T) {
+	resources, configs, err := ranch.ParseConfig("config.yaml")
 	if err != nil {
 		t.Errorf("parseConfig error: %v", err)
 	}
 
-	if len(data) == 0 {
+	if len(resources) == 0 {
 		t.Errorf("empty data")
 	}
+	configNames := map[string]bool{}
+	resourceNames := map[string]bool{}
 
-	names := map[string]bool{}
-	for _, p := range data {
+	for _, p := range configs {
+		if p.Name == "" {
+			t.Errorf("empty config name: %v", p.Name)
+		}
+
+		if _, ok := configNames[p.Name]; ok {
+			t.Errorf("duplicated config name: %v", p.Name)
+		} else {
+			configNames[p.Name] = true
+		}
+	}
+
+	for _, p := range resources {
 		if p.Name == "" {
 			t.Errorf("empty resource name: %v", p.Name)
 		}
 
-		if _, ok := names[p.Name]; ok {
+		if _, ok := resourceNames[p.Name]; ok {
 			t.Errorf("duplicated resource name: %v", p.Name)
 		} else {
-			names[p.Name] = true
+			resourceNames[p.Name] = true
+		}
+	}
+}
+
+func TestParseConfig(t *testing.T) {
+	resources, configs, err := ranch.ParseConfig("test-config.yaml")
+	if err != nil {
+		t.Errorf("parseConfig error: %v", err)
+	}
+
+	if len(resources) == 0 {
+		t.Errorf("empty resources")
+	}
+
+	if len(configs) == 0 {
+		t.Errorf("empty configs")
+	}
+
+	for _, c := range configs {
+		switch c.Spec.Type {
+		case gcp.ResourceConfigType:
+			{
+				var test gcp.ResourceConfig
+				yaml.Unmarshal([]byte(c.Spec.TypedContent.Content), &test)
+				if len(test.ProjectConfigs) == 0 {
+					t.Error("empty project")
+				}
+			}
 		}
 	}
 }

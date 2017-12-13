@@ -44,13 +44,14 @@ func CreateFakeBoskos(resources int, types []string) *fakeBoskos {
 				Name:  fmt.Sprintf("res-%d", i),
 				Type:  types[r.Intn(len(types))],
 				State: "dirty",
+				Info:  *new(common.ResourceInfo),
 			})
 	}
 
 	return fb
 }
 
-func (fb *fakeBoskos) Acquire(rtype string, state string, dest string) (string, error) {
+func (fb *fakeBoskos) Acquire(rtype string, state string, dest string) (*common.Resource, error) {
 	fb.lock.Lock()
 	defer fb.lock.Unlock()
 
@@ -59,11 +60,11 @@ func (fb *fakeBoskos) Acquire(rtype string, state string, dest string) (string, 
 		if r.State == state {
 			r.State = dest
 			fb.wg.Add(1)
-			return r.Name, nil
+			return r, nil
 		}
 	}
 
-	return "", nil
+	return nil, fmt.Errorf("could not find resource of type %s", rtype)
 }
 
 func (fb *fakeBoskos) ReleaseOne(name string, dest string) error {
@@ -142,9 +143,9 @@ func FakeRun(fb *fakeBoskos, buffer chan string, res string) (int, error) {
 		case <-timeout:
 			return totalClean, errors.New("should not timedout")
 		default:
-			if proj, err := fb.Acquire(res, "dirty", "cleaning"); err != nil {
+			if projRes, err := fb.Acquire(res, "dirty", "cleaning"); err != nil {
 				return totalClean, fmt.Errorf("acquire failed with %v", err)
-			} else if proj == "" {
+			} else if projRes.Name == "" {
 				return totalClean, errors.New("not expect to run out of resources")
 			} else {
 				if totalClean > maxAcquire {
@@ -153,7 +154,7 @@ func FakeRun(fb *fakeBoskos, buffer chan string, res string) (int, error) {
 				}
 				boom := time.After(50 * time.Millisecond)
 				select {
-				case buffer <- proj: // normal case
+				case buffer <- projRes.Name: // normal case
 					totalClean++
 				case <-boom:
 					return totalClean, nil
