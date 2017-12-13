@@ -326,7 +326,7 @@ func handleUpdate(r *ranch.Ranch) http.HandlerFunc {
 			defer req.Body.Close()
 			decoder := json.NewDecoder(req.Body)
 			if err := decoder.Decode(info); err != nil {
-				msg := fmt.Sprintf("Unable to parse Body.", req.Body)
+				msg := fmt.Sprintf("Unable to parse Body %s", req.Body)
 				logrus.Warning(msg)
 				http.Error(res, msg, http.StatusBadRequest)
 				return
