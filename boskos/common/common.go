@@ -37,13 +37,15 @@ type TypedContent struct {
 }
 
 type Resource struct {
-	Type       string       `json:"type"`
-	Name       string       `json:"name"`
-	State      string       `json:"state"`
-	Owner      string       `json:"owner"`
-	LastUpdate time.Time    `json:"lastupdate"`
-	UseConfig  bool         `json:"useconfig,omitempty"`
-	Info       ResourceInfo `json:"info,omitempty"`
+	Type       string    `json:"type"`
+	Name       string    `json:"name"`
+	State      string    `json:"state"`
+	Owner      string    `json:"owner"`
+	LastUpdate time.Time `json:"lastupdate"`
+	// Tell whether to use a config or not
+	UseConfig bool `json:"useconfig,omitempty"`
+	// Information on how to use the resource
+	Info ResourceInfo `json:"info,omitempty"`
 }
 
 type ResourceInfo struct {
@@ -55,19 +57,19 @@ type ResourceInfo struct {
 type ResourceEntry struct {
 	Type      string   `json:"type"`
 	State     string   `json:"state"`
-	UseConfig bool     `json:"useConfig"`
+	UseConfig bool     `json:"useconfig"`
 	Names     []string `json:"names,flow"`
 }
 
-type ConfigEntry struct {
+type ResourceConfig struct {
+	Name   string        `json:"name"`
 	Config TypedContent  `json:"config"`
 	Needs  ResourceNeeds `json:"needs"`
-	Name   string        `json:"name"`
 }
 
 type BoskosConfig struct {
-	Resources []ResourceEntry `json:"resources,flow"`
-	Configs   []ConfigEntry   `json:"configs,flow,omitempty"`
+	Resources []ResourceEntry  `json:"resources,flow"`
+	Configs   []ResourceConfig `json:"configs,flow,omitempty"`
 }
 
 type Metric struct {

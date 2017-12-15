@@ -32,15 +32,15 @@ import (
 )
 
 func MakeTestRanch(resources []common.Resource) *ranch.Ranch {
-	var ris []crds.BoskosObject
+	var ris []crds.Object
 	for _, r := range resources {
-		ri := new(crds.ResourceInstance)
+		ri := new(crds.Resource)
 		ri.FromResource(r)
 		ris = append(ris, ri)
 	}
 	newRanch := ranch.Ranch{
 		Resources:      resources,
-		ResourceClient: crds.NewCRDDummyClient(crds.ResourceInstancePlural, ris),
+		ResourceClient: crds.NewCRDDummyClient(crds.ResourcePlural, ris),
 		ConfigClient:   crds.NewCRDDummyClient(crds.ResourceConfigPlural, nil),
 	}
 

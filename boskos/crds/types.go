@@ -17,107 +17,99 @@ limitations under the License.
 package crds
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/test-infra/boskos/common"
 	"time"
 )
 
 const (
-	ResourcesInstancesKind = "ResourceInstance"
-	ResourceInstancePlural = "resourceinstances"
-	ResourcesConfigsKind   = "Config"
-	ResourceConfigPlural   = "resourceconfigs"
+	ResourceKind         = "Resource"
+	ResourcePlural       = "resources"
+	ResourceConfigKind   = "ResourceConfig"
+	ResourceConfigPlural = "resourceconfigs"
 )
 
 var knownTypes = map[string]struct {
-	object     BoskosObject
-	collection BoskosCollection
+	object     Object
+	collection Collection
 }{
 	ResourceConfigPlural: {
 		object:     &ResourceConfig{},
 		collection: &ResourceConfigList{},
 	},
-	ResourceInstancePlural: {
-		object:     &ResourceInstance{},
-		collection: &ResourceInstanceList{},
+	ResourcePlural: {
+		object:     &Resource{},
+		collection: &ResourceList{},
 	},
 }
 
-type BoskosObject interface {
+type Object interface {
 	runtime.Object
 	GetName() string
 }
 
-type BoskosCollection interface {
+type Collection interface {
 	runtime.Object
-	SetItems([]BoskosObject)
-	GetItems() []BoskosObject
+	SetItems([]Object)
+	GetItems() []Object
 }
 
-// ResourceInstance holds the Resource Data. This is where the data is persisted.
+// Resource holds the Resource Data. This is where the data is persisted.
 // The Resource will be generated from this
 
-type ResourceInstance struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              ResourceInstanceSpec   `json:"spec,omitempty"`
-	Status            ResourceInstanceStatus `json:"status,omitempty"`
+type Resource struct {
+	v1.TypeMeta   `json:",inline"`
+	v1.ObjectMeta `json:"metadata,omitempty"`
+	Spec          ResourceSpec   `json:"spec,omitempty"`
+	Status        ResourceStatus `json:"status,omitempty"`
 }
 
-type ResourceInstanceList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []*ResourceInstance `json:"items"`
+type ResourceList struct {
+	v1.TypeMeta `json:",inline"`
+	v1.ListMeta `json:"metadata,omitempty"`
+	Items       []*Resource `json:"items"`
 }
 
-type ResourceInstanceSpec struct {
+type ResourceSpec struct {
 	Type      string `json:"type"`
 	UseConfig bool   `json:"useconfig,omitempty"`
 }
 
-// ResourceInstanceStatus holds information about on leased resources as well as
+// ResourceStatus holds information about on leased resources as well as
 // information on how to use the new resource created.
-
-type ResourceInstanceStatus struct {
+type ResourceStatus struct {
 	State      string              `json:"state,omitempty"`
 	Owner      string              `json:"owner"`
 	LastUpdate time.Time           `json:"lastupdate,omitempty"`
 	Info       common.ResourceInfo `json:"info,omitempty"`
 }
 
-// Config holds generalized configuration information about how the
-// resource needs to be created.
-// There is a one to many relation from Config to ResourceInstance.
-// Although some ResourceInstance might not have a Config (Example Project)
+// ResourceConfig holds generalized configuration information about how the
+// resource needs to be created. Some Resource might not have a ResourceConfig (Example Project)
 
 type ResourceConfig struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              ResourceConfigSpec   `json:"spec"`
-	Status            ResourceConfigStatus `json:"status,omitempty"`
+	v1.TypeMeta   `json:",inline"`
+	v1.ObjectMeta `json:"metadata,omitempty"`
+	Spec          ResourceConfigSpec `json:"spec"`
 }
 
 type ResourceConfigSpec struct {
-	Config common.TypedContent  `json:"spec"`
+	Config common.TypedContent  `json:"config"`
 	Needs  common.ResourceNeeds `json:"resourceneeds"`
 }
 
-type ResourceConfigStatus struct {
-	State string `json:"state,omitempty"`
-}
-
 type ResourceConfigList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []*ResourceConfig `json:"items"`
+	v1.TypeMeta `json:",inline"`
+	v1.ListMeta `json:"metadata,omitempty"`
+	Items       []*ResourceConfig `json:"items"`
 }
 
-func (in *ResourceInstance) GetName() string {
+func (in *Resource) GetName() string {
 	return in.Name
 }
 
-func (in *ResourceInstance) DeepCopyInto(out *ResourceInstance) {
+func (in *Resource) DeepCopyInto(out *Resource) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
@@ -125,23 +117,23 @@ func (in *ResourceInstance) DeepCopyInto(out *ResourceInstance) {
 	out.Status = in.Status
 }
 
-func (in *ResourceInstance) DeepCopy() *ResourceInstance {
+func (in *Resource) DeepCopy() *Resource {
 	if in == nil {
 		return nil
 	}
-	out := new(ResourceInstance)
+	out := new(Resource)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *ResourceInstance) DeepCopyObject() runtime.Object {
+func (in *Resource) DeepCopyObject() runtime.Object {
 	if c := in.DeepCopy(); c != nil {
 		return c
 	}
 	return nil
 }
 
-func (in *ResourceInstance) ToResource() common.Resource {
+func (in *Resource) ToResource() common.Resource {
 	return common.Resource{
 		Name:       in.Name,
 		Type:       in.Spec.Type,
@@ -153,7 +145,7 @@ func (in *ResourceInstance) ToResource() common.Resource {
 	}
 }
 
-func (in *ResourceInstance) FromResource(r common.Resource) {
+func (in *Resource) FromResource(r common.Resource) {
 	in.Name = r.Name
 	in.Spec.Type = r.Type
 	in.Spec.UseConfig = r.UseConfig
@@ -163,39 +155,39 @@ func (in *ResourceInstance) FromResource(r common.Resource) {
 	in.Status.Info = r.Info
 }
 
-func (in *ResourceInstanceList) GetItems() []BoskosObject {
-	var items []BoskosObject
+func (in *ResourceList) GetItems() []Object {
+	var items []Object
 	for _, i := range in.Items {
 		items = append(items, i)
 	}
 	return items
 }
 
-func (in *ResourceInstanceList) SetItems(objects []BoskosObject) {
-	var items []*ResourceInstance
+func (in *ResourceList) SetItems(objects []Object) {
+	var items []*Resource
 	for _, b := range objects {
-		items = append(items, b.(*ResourceInstance))
+		items = append(items, b.(*Resource))
 	}
 	in.Items = items
 }
 
-func (in *ResourceInstanceList) DeepCopyInto(out *ResourceInstanceList) {
+func (in *ResourceList) DeepCopyInto(out *ResourceList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	out.Items = in.Items
 }
 
-func (in *ResourceInstanceList) DeepCopy() *ResourceInstanceList {
+func (in *ResourceList) DeepCopy() *ResourceList {
 	if in == nil {
 		return nil
 	}
-	out := new(ResourceInstanceList)
+	out := new(ResourceList)
 	in.DeepCopyInto(out)
 	return out
 }
 
-func (in *ResourceInstanceList) DeepCopyObject() runtime.Object {
+func (in *ResourceList) DeepCopyObject() runtime.Object {
 	if c := in.DeepCopy(); c != nil {
 		return c
 	}
@@ -211,7 +203,6 @@ func (in *ResourceConfig) DeepCopyInto(out *ResourceConfig) {
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
 	out.Spec = in.Spec
-	out.Status = in.Status
 }
 
 func (in *ResourceConfig) DeepCopy() *ResourceConfig {
@@ -230,29 +221,29 @@ func (in *ResourceConfig) DeepCopyObject() runtime.Object {
 	return nil
 }
 
-func (in *ResourceConfig) ToResource() common.ConfigEntry {
-	return common.ConfigEntry{
+func (in *ResourceConfig) ToResource() common.ResourceConfig {
+	return common.ResourceConfig{
 		Name:   in.Name,
 		Config: in.Spec.Config,
 		Needs:  in.Spec.Needs,
 	}
 }
 
-func (in *ResourceConfig) FromResource(r common.ConfigEntry) {
+func (in *ResourceConfig) FromResource(r common.ResourceConfig) {
 	in.ObjectMeta.Name = r.Name
 	in.Spec.Config = r.Config
 	in.Spec.Needs = r.Needs
 }
 
-func (in *ResourceConfigList) GetItems() []BoskosObject {
-	var items []BoskosObject
+func (in *ResourceConfigList) GetItems() []Object {
+	var items []Object
 	for _, i := range in.Items {
 		items = append(items, i)
 	}
 	return items
 }
 
-func (in *ResourceConfigList) SetItems(objects []BoskosObject) {
+func (in *ResourceConfigList) SetItems(objects []Object) {
 	var items []*ResourceConfig
 	for _, b := range objects {
 		items = append(items, b.(*ResourceConfig))

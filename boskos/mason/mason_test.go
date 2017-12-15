@@ -35,7 +35,7 @@ const (
 type fakeBoskos struct {
 	lock      sync.Mutex
 	resources map[string]*common.Resource
-	configs   map[string]*common.ConfigEntry
+	configs   map[string]*common.ResourceConfig
 }
 
 type testConfig map[string]struct {
@@ -70,7 +70,7 @@ func (fc *fakeConfig) Construct(res *common.Resource, typeToRes common.TypeToRes
 func createFakeBoskos(tc testConfig) *fakeBoskos {
 	fb := &fakeBoskos{}
 	resources := map[string]*common.Resource{}
-	configs := map[string]*common.ConfigEntry{}
+	configs := map[string]*common.ResourceConfig{}
 
 	for rtype, c := range tc {
 		for i := 0; i < c.count; i++ {
@@ -83,7 +83,7 @@ func createFakeBoskos(tc testConfig) *fakeBoskos {
 				res.UseConfig = true
 				res.State = Dirty
 				if _, ok := configs[rtype]; !ok {
-					configs[rtype] = &common.ConfigEntry{
+					configs[rtype] = &common.ResourceConfig{
 						Config: common.TypedContent{
 							Type:    fakeConfigType,
 							Content: emptyContent,
@@ -142,7 +142,7 @@ func (fb *fakeBoskos) UpdateOne(name, state string, info *common.ResourceInfo) e
 	return fmt.Errorf("no resource %v", name)
 }
 
-func (fb *fakeBoskos) GetConfig(name string) (*common.ConfigEntry, error) {
+func (fb *fakeBoskos) GetConfig(name string) (*common.ResourceConfig, error) {
 	fb.lock.Lock()
 	defer fb.lock.Unlock()
 	config, ok := fb.configs[name]

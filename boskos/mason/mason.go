@@ -57,7 +57,7 @@ type boskosClient interface {
 	Acquire(rtype, state, dest string) (*common.Resource, error)
 	ReleaseOne(name, dest string) error
 	UpdateOne(name, state string, info *common.ResourceInfo) error
-	GetConfig(name string) (*common.ConfigEntry, error)
+	GetConfig(name string) (*common.ResourceConfig, error)
 }
 
 type Mason struct {
@@ -117,7 +117,7 @@ func (m *Mason) RegisterConfigConverter(name string, fn ConfigConverter) error {
 	return nil
 }
 
-func (m *Mason) convertConfig(configEntry *common.ConfigEntry) (Config, error) {
+func (m *Mason) convertConfig(configEntry *common.ResourceConfig) (Config, error) {
 	fn, ok := m.configConverters[configEntry.Config.Type]
 	if !ok {
 		return nil, fmt.Errorf("config type %s is not supported", configEntry.Name)

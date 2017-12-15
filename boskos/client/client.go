@@ -146,7 +146,7 @@ func (c *Client) UpdateOne(name string, state string, info *common.ResourceInfo)
 }
 
 // UpdateOne signals update for one of the resource hold by the client.
-func (c *Client) GetConfig(name string) (*common.ConfigEntry, error) {
+func (c *Client) GetConfig(name string) (*common.ResourceConfig, error) {
 	return c.getConfig(name)
 }
 
@@ -221,7 +221,7 @@ func (c *Client) release(name string, dest string) error {
 	return nil
 }
 
-func (c *Client) getConfig(name string) (*common.ConfigEntry, error) {
+func (c *Client) getConfig(name string) (*common.ResourceConfig, error) {
 	resp, err := http.Post(fmt.Sprintf("%v/getconfig?name=%v", c.url, name), "", nil)
 	if err != nil {
 		return nil, err
@@ -236,7 +236,7 @@ func (c *Client) getConfig(name string) (*common.ConfigEntry, error) {
 		return nil, err
 	}
 
-	var config = new(common.ConfigEntry)
+	var config = new(common.ResourceConfig)
 	err = json.Unmarshal(body, &config)
 	if err != nil {
 		return nil, err

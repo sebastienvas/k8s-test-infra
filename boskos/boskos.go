@@ -55,7 +55,7 @@ func main() {
 		logrus.Fatal(err)
 	}
 
-	rc := crds.NewCRDClient(restClient, scheme, *namespace, crds.ResourceInstancePlural)
+	rc := crds.NewCRDClient(restClient, scheme, *namespace, crds.ResourcePlural)
 	cc := crds.NewCRDClient(restClient, scheme, *namespace, crds.ResourceConfigPlural)
 	r, err := ranch.NewRanch(*configPath, rc, cc)
 	if err != nil {

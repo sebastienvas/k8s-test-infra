@@ -80,12 +80,12 @@ func RegisterResources(config *rest.Config) error {
 
 	for _, s := range []struct{ p, k string }{
 		{
-			p: ResourceInstancePlural,
-			k: ResourcesInstancesKind,
+			p: ResourcePlural,
+			k: ResourceKind,
 		},
 		{
 			p: ResourceConfigPlural,
-			k: ResourcesConfigsKind,
+			k: ResourceConfigKind,
 		}} {
 		crd := &apiextensionsv1beta1.CustomResourceDefinition{
 			ObjectMeta: v1.ObjectMeta{
@@ -113,10 +113,10 @@ func NewCRDClient(cl *rest.RESTClient, scheme *runtime.Scheme, namespace, plural
 		codec: runtime.NewParameterCodec(scheme)}
 }
 
-func NewCRDDummyClient(plural string, objects []BoskosObject) *CRDDummyClient {
+func NewCRDDummyClient(plural string, objects []Object) *CRDDummyClient {
 	c := CRDDummyClient{
 		plural:  plural,
-		objects: map[string]BoskosObject{},
+		objects: map[string]Object{},
 	}
 	for _, o := range objects {
 		c.objects[o.GetName()] = o
@@ -125,24 +125,24 @@ func NewCRDDummyClient(plural string, objects []BoskosObject) *CRDDummyClient {
 }
 
 type CRDClientInterface interface {
-	Create(obj BoskosObject) (runtime.Object, error)
-	Update(obj BoskosObject) (runtime.Object, error)
+	Create(obj Object) (runtime.Object, error)
+	Update(obj Object) (runtime.Object, error)
 	Delete(name string, options *v1.DeleteOptions) error
 	Get(name string) (runtime.Object, error)
 	List(opts v1.ListOptions) (runtime.Object, error)
 }
 
 type CRDDummyClient struct {
-	objects map[string]BoskosObject
+	objects map[string]Object
 	plural  string
 }
 
-func (c *CRDDummyClient) Create(obj BoskosObject) (runtime.Object, error) {
+func (c *CRDDummyClient) Create(obj Object) (runtime.Object, error) {
 	c.objects[obj.GetName()] = obj
 	return obj, nil
 }
 
-func (c *CRDDummyClient) Update(obj BoskosObject) (runtime.Object, error) {
+func (c *CRDDummyClient) Update(obj Object) (runtime.Object, error) {
 	c.objects[obj.GetName()] = obj
 	return obj, nil
 }
@@ -165,7 +165,7 @@ func (c *CRDDummyClient) Get(name string) (runtime.Object, error) {
 }
 
 func (c *CRDDummyClient) List(opts v1.ListOptions) (runtime.Object, error) {
-	var items []BoskosObject
+	var items []Object
 	for _, i := range c.objects {
 		items = append(items, i)
 	}
@@ -181,7 +181,7 @@ type CRDclient struct {
 	codec  runtime.ParameterCodec
 }
 
-func (c *CRDclient) Create(obj BoskosObject) (runtime.Object, error) {
+func (c *CRDclient) Create(obj Object) (runtime.Object, error) {
 	result := knownTypes[c.plural].object.DeepCopyObject()
 	err := c.cl.Post().
 		Namespace(c.ns).Resource(c.plural).
@@ -189,7 +189,7 @@ func (c *CRDclient) Create(obj BoskosObject) (runtime.Object, error) {
 	return result, err
 }
 
-func (c *CRDclient) Update(obj BoskosObject) (runtime.Object, error) {
+func (c *CRDclient) Update(obj Object) (runtime.Object, error) {
 	result := knownTypes[c.plural].object.DeepCopyObject()
 	err := c.cl.Put().
 		Namespace(c.ns).Resource(c.plural).

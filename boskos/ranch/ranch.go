@@ -67,13 +67,13 @@ func (r ResourceNotFound) Error() string {
 	return fmt.Sprintf("Resource %s not exist", r.name)
 }
 
-// ConfigNotFound will be returned if requested config does not exist.
-type ConfigNotFound struct {
+// ResourceConfigNotFound will be returned if requested config does not exist.
+type ResourceConfigNotFound struct {
 	name string
 }
 
-func (r ConfigNotFound) Error() string {
-	return fmt.Sprintf("Config %s not exist", r.name)
+func (r ResourceConfigNotFound) Error() string {
+	return fmt.Sprintf("ResourceConfig %s not exist", r.name)
 }
 
 // StateNotMatch will be returned if requested state does not match current state for target resource.
@@ -113,7 +113,7 @@ func (r *Ranch) RestoreResources() error {
 	if err != nil {
 		return err
 	}
-	l := o.(*crds.ResourceInstanceList)
+	l := o.(*crds.ResourceList)
 	for _, res := range l.Items {
 		r.Resources = append(r.Resources, res.ToResource())
 	}
@@ -140,14 +140,14 @@ func (r *Ranch) Acquire(rtype, state, dest, owner string) (*common.Resource, err
 			res.State = dest
 			copy(r.Resources[idx:], r.Resources[idx+1:])
 			r.Resources[len(r.Resources)-1] = res
-			if err := r.updateResourceInstance(res); err != nil {
+			if err := r.persistResource(res); err != nil {
 				return nil, err
 			}
 			for _, rName := range res.Info.LeasedResources {
 				lr := r.searchByName(rName)
 				if lr != nil {
 					lr.LastUpdate = time.Now()
-					if err := r.updateResourceInstance(*lr); err != nil {
+					if err := r.persistResource(*lr); err != nil {
 						return &res, err
 					}
 				}
@@ -162,15 +162,15 @@ func (r *Ranch) Acquire(rtype, state, dest, owner string) (*common.Resource, err
 // In: name - name of the target config
 // Out:
 //   A valid  StructInfo object on success, or
-//   ConfigNotFound error if target named config does not exist.
-func (r *Ranch) GetConfig(name string) (*common.ConfigEntry, error) {
+//   ResourceConfigNotFound error if target named config does not exist.
+func (r *Ranch) GetConfig(name string) (*common.ResourceConfig, error) {
 	o, err := r.ConfigClient.Get(name)
 	if err != nil {
 		logrus.WithError(err).Errorf("Unable to get config for %s", name)
-		return nil, ConfigNotFound{name}
+		return nil, ResourceConfigNotFound{name}
 	}
 	c := o.(*crds.ResourceConfig)
-	configEntry := common.ConfigEntry{
+	configEntry := common.ResourceConfig{
 		Needs:  c.Spec.Needs,
 		Name:   c.Name,
 		Config: c.Spec.Config,
@@ -199,7 +199,7 @@ func (r *Ranch) Release(name, dest, owner string) error {
 	res.LastUpdate = time.Now()
 	res.Owner = ""
 	res.State = dest
-	if err := r.updateResourceInstance(*res); err != nil {
+	if err := r.persistResource(*res); err != nil {
 		return err
 	}
 
@@ -207,7 +207,7 @@ func (r *Ranch) Release(name, dest, owner string) error {
 		lr := r.searchByName(rName)
 		if lr != nil {
 			lr.LastUpdate = time.Now()
-			if err := r.updateResourceInstance(*lr); err != nil {
+			if err := r.persistResource(*lr); err != nil {
 				return err
 			}
 		}
@@ -216,18 +216,18 @@ func (r *Ranch) Release(name, dest, owner string) error {
 	return nil
 }
 
-func (r *Ranch) updateResourceInstance(res common.Resource) error {
+func (r *Ranch) persistResource(res common.Resource) error {
 	o, err := r.ResourceClient.Get(res.Name)
 	if err != nil {
-		logrus.WithError(err).Errorf("unable to find ResourceInstance %s", res.Name)
+		logrus.WithError(err).Errorf("unable to find Resource %s", res.Name)
 		return err
 	}
 
-	ri := o.(*crds.ResourceInstance)
+	ri := o.(*crds.Resource)
 	ri.FromResource(res)
-	logrus.Infof("Updating ResourceInstance %s", ri.Name)
+	logrus.Infof("Updating Resource %s", ri.Name)
 	if _, err := r.ResourceClient.Update(ri); err != nil {
-		logrus.WithError(err).Errorf("failed to update ResourceInstance %s", ri.Name)
+		logrus.WithError(err).Errorf("failed to update Resource %s", ri.Name)
 		return err
 	}
 	return nil
@@ -260,7 +260,7 @@ func (r *Ranch) Update(name, owner, state string, info *common.ResourceInfo) err
 		res.Info = *info
 	}
 	res.LastUpdate = time.Now()
-	if err := r.updateResourceInstance(*res); err != nil {
+	if err := r.persistResource(*res); err != nil {
 		return err
 	}
 
@@ -268,7 +268,7 @@ func (r *Ranch) Update(name, owner, state string, info *common.ResourceInfo) err
 		lr := r.searchByName(rName)
 		if lr != nil {
 			res.LastUpdate = time.Now()
-			if err := r.updateResourceInstance(*lr); err != nil {
+			if err := r.persistResource(*lr); err != nil {
 				return err
 			}
 		}
@@ -306,14 +306,14 @@ func (r *Ranch) Reset(rtype, state string, expire time.Duration, dest string) (m
 				ret[res.Name] = res.Owner
 				res.Owner = ""
 				res.State = dest
-				if err := r.updateResourceInstance(*res); err != nil {
+				if err := r.persistResource(*res); err != nil {
 					return ret, err
 				}
 				for _, rName := range res.Info.LeasedResources {
 					lr := r.searchByName(rName)
 					if lr != nil {
 						res.LastUpdate = time.Now()
-						if err := r.updateResourceInstance(*lr); err != nil {
+						if err := r.persistResource(*lr); err != nil {
 							return ret, err
 						}
 					}
@@ -531,7 +531,7 @@ func (r *Ranch) syncResources(data []common.Resource) error {
 				if p.UseConfig != exist.UseConfig || p.Type != exist.Type {
 					exist.UseConfig = p.UseConfig
 					exist.Type = p.Type
-					if err := r.updateResourceInstance(exist); err != nil {
+					if err := r.persistResource(exist); err != nil {
 						finalError = multierror.Append(finalError, err)
 					}
 				}
@@ -545,7 +545,7 @@ func (r *Ranch) syncResources(data []common.Resource) error {
 			}
 			logrus.Infof("Adding resource %s", p.Name)
 			r.Resources = append(r.Resources, p)
-			ri := new(crds.ResourceInstance)
+			ri := new(crds.Resource)
 			ri.FromResource(p)
 			if _, err := r.ResourceClient.Create(ri); err != nil {
 				logrus.WithError(err).Errorf("unable to add resource %s", ri.Name)
