@@ -465,8 +465,7 @@ func (r *Ranch) syncConfigs(newConfigs []crds.ResourceConfig) error {
 	}
 
 	for _, n := range toAdd.ToSlice() {
-		var rc crds.ResourceConfig
-		rc = configs[n.(string)]
+		rc := configs[n.(string)]
 		if _, err := r.ConfigClient.Create(&rc); err != nil {
 			logrus.WithError(err).Errorf("failed to create resources %s", n)
 			finalError = multierror.Append(finalError, err)
@@ -474,8 +473,7 @@ func (r *Ranch) syncConfigs(newConfigs []crds.ResourceConfig) error {
 	}
 
 	for _, n := range toUpdate.ToSlice() {
-		var rc crds.ResourceConfig
-		rc = configs[n.(string)]
+		rc := configs[n.(string)]
 		if _, err := r.ConfigClient.Update(&rc); err != nil {
 			logrus.WithError(err).Errorf("failed to update resources %s", n)
 			finalError = multierror.Append(finalError, err)

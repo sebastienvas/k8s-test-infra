@@ -94,12 +94,17 @@ type ResourceInstanceStatus struct {
 type ResourceConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              ResourceConfigSpec `json:"spec"`
+	Spec              ResourceConfigSpec   `json:"spec"`
+	Status            ResourceConfigStatus `json:"status,omitempty"`
 }
 
 type ResourceConfigSpec struct {
 	Config common.TypedContent  `json:"spec"`
 	Needs  common.ResourceNeeds `json:"resourceneeds"`
+}
+
+type ResourceConfigStatus struct {
+	State string `json:"state,omitempty"`
 }
 
 type ResourceConfigList struct {
@@ -206,6 +211,7 @@ func (in *ResourceConfig) DeepCopyInto(out *ResourceConfig) {
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
 	out.Spec = in.Spec
+	out.Status = in.Status
 }
 
 func (in *ResourceConfig) DeepCopy() *ResourceConfig {
