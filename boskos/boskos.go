@@ -56,8 +56,8 @@ func main() {
 	}
 
 	rc := crds.NewCRDClient(restClient, scheme, *namespace, crds.ResourceInstancePlural)
-
-	r, err := ranch.NewRanch(*configPath, rc)
+	cc := crds.NewCRDClient(restClient, scheme, *namespace, crds.ResourceConfigPlural)
+	r, err := ranch.NewRanch(*configPath, rc, cc)
 	if err != nil {
 		logrus.WithError(err).Fatalf("Failed to create ranch! Config: %v, kubeconfig : %v", *configPath, *kubeConfig)
 	}

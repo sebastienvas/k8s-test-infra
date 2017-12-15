@@ -17,8 +17,9 @@ limitations under the License.
 package gcp
 
 import (
-	"encoding/json"
+	"gopkg.in/yaml.v2"
 
+	"github.com/sirupsen/logrus"
 	"k8s.io/test-infra/boskos/common"
 	"k8s.io/test-infra/boskos/mason"
 )
@@ -28,15 +29,16 @@ const (
 )
 
 type GKEClusterConfig struct {
-	MachineType string `json:"machineType,omitempty"`
-	NumNodes    int    `json:"numNodes,omitempty"`
+	MachineType string `json:"machinetype,omitempty"`
+	NumNodes    int    `json:"numnodes,omitempty"`
 	Version     string `json:"version,omitempty"`
 	Zone        string `json:"zone,ompitempty"`
 }
 
 type GCEVMConfig struct {
-	MachineType string `json:"machineType,omitempty"`
+	MachineType string `json:"machinetype,omitempty"`
 	Image       string `json:"image,omitempty"`
+	Zone        string `json:"zone,ompitempty"`
 }
 
 type ProjectConfig struct {
@@ -75,10 +77,15 @@ func (rc *ResourceConfig) GetName() string {
 	return ResourceConfigType
 }
 
-func ConfigConverter(in []byte) (mason.Config, error) {
-	var config *ResourceConfig
-	if err := json.Unmarshal(in, &config); err != nil {
+func configConverter(in string) (*ResourceConfig, error) {
+	var config ResourceConfig
+	if err := yaml.Unmarshal([]byte(in), &config); err != nil {
+		logrus.WithError(err).Errorf("unable to parse %s", in)
 		return nil, err
 	}
-	return config, nil
+	return &config, nil
+}
+
+func ConfigConverter(in string) (mason.Config, error) {
+	return configConverter(in)
 }

@@ -90,10 +90,11 @@ func (s StateNotMatch) Error() string {
 // In: config - path to resource file
 //     storage - path to where to save/restore the state data
 // Out: A Ranch object, loaded from config/storage, or error
-func NewRanch(config string, client *crds.CRDclient) (*Ranch, error) {
+func NewRanch(config string, resourceClient, configClient *crds.CRDclient) (*Ranch, error) {
 
 	newRanch := &Ranch{
-		ResourceClient: client,
+		ResourceClient: resourceClient,
+		ConfigClient:   configClient,
 	}
 
 	newRanch.RestoreResources()
@@ -170,9 +171,9 @@ func (r *Ranch) GetConfig(name string) (*common.ConfigEntry, error) {
 	}
 	c := o.(*crds.ResourceConfig)
 	configEntry := common.ConfigEntry{
-		Needs:        c.Spec.Needs,
-		Name:         c.Name,
-		TypedContent: c.Spec.TypedContent,
+		Needs:  c.Spec.Needs,
+		Name:   c.Name,
+		Config: c.Spec.Config,
 	}
 	return &configEntry, nil
 }
@@ -373,19 +374,14 @@ func ParseConfig(configPath string) ([]common.Resource, []crds.ResourceConfig, e
 	configNames := map[string]map[string]int{}
 	var configs []crds.ResourceConfig
 	for _, c := range data.Configs {
-		configs = append(configs, crds.ResourceConfig{
-			ObjectMeta: v1.ObjectMeta{Name: c.Name},
-			Spec: crds.ResourceConfigSpec{
-				Needs:        c.Needs,
-				TypedContent: c.TypedContent,
-			},
-		})
+		conf := &crds.ResourceConfig{}
+		conf.FromResource(c)
+		configs = append(configs, *conf)
 		configNames[c.Name] = c.Needs
 	}
 
 	var resources []common.Resource
 	for _, res := range data.Resources {
-
 		if res.UseConfig {
 			if c, ok := configNames[res.Type]; !ok {
 				err := fmt.Errorf("resource type %s does not have associated config", res.Type)
@@ -397,7 +393,6 @@ func ParseConfig(configPath string) ([]common.Resource, []crds.ResourceConfig, e
 					resourcesNeeds[k] += v
 				}
 			}
-
 		}
 		for _, name := range res.Names {
 			resources = append(resources, common.Resource{
@@ -423,11 +418,10 @@ func ParseConfig(configPath string) ([]common.Resource, []crds.ResourceConfig, e
 			return nil, nil, err
 		}
 	}
-
 	return resources, configs, nil
 }
 
-func (r *Ranch) syncConfigs(newconfigs []crds.ResourceConfig) error {
+func (r *Ranch) syncConfigs(newConfigs []crds.ResourceConfig) error {
 	o, err := r.ConfigClient.List(v1.ListOptions{})
 	if err != nil {
 		logrus.WithError(err).Error("cannot list config")
@@ -439,20 +433,22 @@ func (r *Ranch) syncConfigs(newconfigs []crds.ResourceConfig) error {
 	newSet := mapset.NewSet()
 	toUpdate := mapset.NewSet()
 
-	var configs map[string]crds.ResourceConfig
+	configs := map[string]crds.ResourceConfig{}
 
 	for _, c := range currentConfigs {
 		currentSet.Add(c.Name)
 		configs[c.Name] = *c
 	}
 
-	for _, c := range newconfigs {
+	for _, c := range newConfigs {
 		newSet.Add(c.Name)
 		if old, exists := configs[c.Name]; exists {
 			if !reflect.DeepEqual(old.Spec, c.Spec) {
 				toUpdate.Add(c.Name)
 				configs[c.Name] = c
 			}
+		} else {
+			configs[c.Name] = c
 		}
 	}
 
@@ -463,6 +459,7 @@ func (r *Ranch) syncConfigs(newconfigs []crds.ResourceConfig) error {
 
 	for _, n := range toDelete.ToSlice() {
 		if err := r.ConfigClient.Delete(n.(string), v1.NewDeleteOptions(DeleteGracePeriodSeconds)); err != nil {
+			logrus.WithError(err).Errorf("failed to delete config %s", n)
 			finalError = multierror.Append(finalError, err)
 		}
 	}
@@ -471,6 +468,7 @@ func (r *Ranch) syncConfigs(newconfigs []crds.ResourceConfig) error {
 		var rc crds.ResourceConfig
 		rc = configs[n.(string)]
 		if _, err := r.ConfigClient.Create(&rc); err != nil {
+			logrus.WithError(err).Errorf("failed to create resources %s", n)
 			finalError = multierror.Append(finalError, err)
 		}
 	}
@@ -479,6 +477,7 @@ func (r *Ranch) syncConfigs(newconfigs []crds.ResourceConfig) error {
 		var rc crds.ResourceConfig
 		rc = configs[n.(string)]
 		if _, err := r.ConfigClient.Update(&rc); err != nil {
+			logrus.WithError(err).Errorf("failed to update resources %s", n)
 			finalError = multierror.Append(finalError, err)
 		}
 	}

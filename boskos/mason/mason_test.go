@@ -46,7 +46,7 @@ type testConfig map[string]struct {
 type fakeConfig struct {
 }
 
-func fakeConfigConverter(in []byte) (Config, error) {
+func fakeConfigConverter(in string) (Config, error) {
 	return &fakeConfig{}, nil
 }
 
@@ -84,7 +84,7 @@ func createFakeBoskos(tc testConfig) *fakeBoskos {
 				res.State = Dirty
 				if _, ok := configs[rtype]; !ok {
 					configs[rtype] = &common.ConfigEntry{
-						TypedContent: common.TypedContent{
+						Config: common.TypedContent{
 							Type:    fakeConfigType,
 							Content: emptyContent,
 						},

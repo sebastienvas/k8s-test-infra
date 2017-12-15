@@ -60,9 +60,9 @@ type ResourceEntry struct {
 }
 
 type ConfigEntry struct {
-	TypedContent
-	Needs ResourceNeeds `json:"needs"`
-	Name  string        `json:"name"`
+	Config TypedContent  `json:"config"`
+	Needs  ResourceNeeds `json:"needs"`
+	Name   string        `json:"name"`
 }
 
 type BoskosConfig struct {

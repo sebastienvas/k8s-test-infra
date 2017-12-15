@@ -153,7 +153,7 @@ func (c *CRDDummyClient) Delete(name string, options *v1.DeleteOptions) error {
 		delete(c.objects, name)
 		return nil
 	}
-	return fmt.Errorf("%s does not exist")
+	return fmt.Errorf("%s does not exist", name)
 }
 
 func (c *CRDDummyClient) Get(name string) (runtime.Object, error) {

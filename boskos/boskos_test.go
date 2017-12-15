@@ -25,7 +25,6 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/yaml.v2"
 	"k8s.io/test-infra/boskos/common"
 	"k8s.io/test-infra/boskos/crds"
 	"k8s.io/test-infra/boskos/gcp"
@@ -806,14 +805,10 @@ func TestParseConfig(t *testing.T) {
 	}
 
 	for _, c := range configs {
-		switch c.Spec.Type {
+		switch c.Spec.Config.Type {
 		case gcp.ResourceConfigType:
-			{
-				var test gcp.ResourceConfig
-				yaml.Unmarshal([]byte(c.Spec.TypedContent.Content), &test)
-				if len(test.ProjectConfigs) == 0 {
-					t.Error("empty project")
-				}
+			if _, err := gcp.ConfigConverter(c.Spec.Config.Content); err != nil {
+				t.Error(err)
 			}
 		}
 	}

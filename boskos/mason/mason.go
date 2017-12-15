@@ -51,7 +51,7 @@ type Config interface {
 	Construct(*common.Resource, common.TypeToResources) (*common.ResourceInfo, error)
 }
 
-type ConfigConverter func([]byte) (Config, error)
+type ConfigConverter func(string) (Config, error)
 
 type boskosClient interface {
 	Acquire(rtype, state, dest string) (*common.Resource, error)
@@ -118,11 +118,11 @@ func (m *Mason) RegisterConfigConverter(name string, fn ConfigConverter) error {
 }
 
 func (m *Mason) convertConfig(configEntry *common.ConfigEntry) (Config, error) {
-	fn, ok := m.configConverters[configEntry.Type]
+	fn, ok := m.configConverters[configEntry.Config.Type]
 	if !ok {
 		return nil, fmt.Errorf("config type %s is not supported", configEntry.Name)
 	}
-	return fn([]byte(configEntry.Content))
+	return fn(configEntry.Config.Content)
 }
 
 func (m *Mason) cleanAll() {
@@ -150,7 +150,7 @@ func (m *Mason) cleanOne(res *common.Resource, leasedResources common.TypeToReso
 	}
 	config, err := m.convertConfig(configEntry)
 	if err != nil {
-		logrus.WithError(err).Errorf("failed to convert config type %s - \n%s", configEntry.Type, configEntry.Content)
+		logrus.WithError(err).Errorf("failed to convert config type %s - \n%s", configEntry.Config.Type, configEntry.Config.Content)
 		return err
 	}
 	info, err := config.Construct(res, leasedResources)

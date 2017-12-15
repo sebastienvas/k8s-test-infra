@@ -98,8 +98,8 @@ type ResourceConfig struct {
 }
 
 type ResourceConfigSpec struct {
-	common.TypedContent `json:"spec"`
-	Needs               common.ResourceNeeds `json:"resourceneeds"`
+	Config common.TypedContent  `json:"spec"`
+	Needs  common.ResourceNeeds `json:"resourceneeds"`
 }
 
 type ResourceConfigList struct {
@@ -226,15 +226,15 @@ func (in *ResourceConfig) DeepCopyObject() runtime.Object {
 
 func (in *ResourceConfig) ToResource() common.ConfigEntry {
 	return common.ConfigEntry{
-		Name:         in.Name,
-		TypedContent: in.Spec.TypedContent,
-		Needs:        in.Spec.Needs,
+		Name:   in.Name,
+		Config: in.Spec.Config,
+		Needs:  in.Spec.Needs,
 	}
 }
 
 func (in *ResourceConfig) FromResource(r common.ConfigEntry) {
-	in.Name = r.Name
-	in.Spec.TypedContent = r.TypedContent
+	in.ObjectMeta.Name = r.Name
+	in.Spec.Config = r.Config
 	in.Spec.Needs = r.Needs
 }
 
