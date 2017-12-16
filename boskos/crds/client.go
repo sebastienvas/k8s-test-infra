@@ -184,39 +184,55 @@ type CRDclient struct {
 func (c *CRDclient) Create(obj Object) (runtime.Object, error) {
 	result := knownTypes[c.plural].object.DeepCopyObject()
 	err := c.cl.Post().
-		Namespace(c.ns).Resource(c.plural).
-		Body(obj).Do().Into(result)
+		Namespace(c.ns).
+		Resource(c.plural).
+		Name(obj.GetName()).
+		Body(obj).
+		Do().
+		Into(result)
 	return result, err
 }
 
 func (c *CRDclient) Update(obj Object) (runtime.Object, error) {
 	result := knownTypes[c.plural].object.DeepCopyObject()
 	err := c.cl.Put().
-		Namespace(c.ns).Resource(c.plural).
-		Body(obj).Do().Into(result)
+		Namespace(c.ns).
+		Resource(c.plural).
+		Body(obj).
+		Name(obj.GetName()).
+		Do().
+		Into(result)
 	return result, err
 }
 
 func (c *CRDclient) Delete(name string, options *v1.DeleteOptions) error {
 	return c.cl.Delete().
-		Namespace(c.ns).Resource(c.plural).
-		Name(name).Body(options).Do().
+		Namespace(c.ns).
+		Resource(c.plural).
+		Name(name).
+		Body(options).
+		Do().
 		Error()
 }
 
 func (c *CRDclient) Get(name string) (runtime.Object, error) {
 	result := knownTypes[c.plural].object.DeepCopyObject()
 	err := c.cl.Get().
-		Namespace(c.ns).Resource(c.plural).
-		Name(name).Do().Into(result)
+		Namespace(c.ns).
+		Resource(c.plural).
+		Name(name).
+		Do().
+		Into(result)
 	return result, err
 }
 
 func (c *CRDclient) List(opts v1.ListOptions) (runtime.Object, error) {
 	result := knownTypes[c.plural].collection.DeepCopyObject()
 	err := c.cl.Get().
-		Namespace(c.ns).Resource(c.plural).
+		Namespace(c.ns).
+		Resource(c.plural).
 		VersionedParams(&opts, c.codec).
-		Do().Into(result)
+		Do().
+		Into(result)
 	return result, err
 }
