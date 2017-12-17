@@ -35,29 +35,41 @@ import (
 var configPath = flag.String("config", "config.yaml", "Path to init resource file")
 var kubeConfig = flag.String("kubeconfig", "", "absolute path to the kubeConfig file")
 var namespace = flag.String("namespace", v1.NamespaceDefault, "namespace to install on")
+var storagePath = flag.String("storage", "", "Path to persistent volume to load the state")
 
 func main() {
 	flag.Parse()
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 
 	config, scheme, err := crds.CreateRESTConfig(*kubeConfig)
-
-	if err != nil {
-		logrus.Fatal(err)
-	}
-	if err := crds.RegisterResources(config); err != nil {
-		logrus.Fatal(err)
-	}
-
-	// creates the clientset
-	restClient, err := rest.RESTClientFor(config)
 	if err != nil {
 		logrus.Fatal(err)
 	}
 
-	rc := crds.NewCRDClient(restClient, scheme, *namespace, crds.ResourcePlural)
-	cc := crds.NewCRDClient(restClient, scheme, *namespace, crds.ResourceConfigPlural)
-	r, err := ranch.NewRanch(*configPath, rc, cc)
+	var storage ranch.StorageInterface
+	if *storagePath != "" {
+		s, err := ranch.NewInMemStorage(*storagePath)
+		if err != nil {
+			logrus.WithError(err).Fatalf("Failed to create ranch! Config: %v, kubeconfig : %v", *configPath, *kubeConfig)
+		}
+		storage = s
+
+	} else {
+		if err := crds.RegisterResources(config); err != nil {
+			logrus.Fatal(err)
+		}
+		// creates the clientset
+		restClient, err := rest.RESTClientFor(config)
+		if err != nil {
+			logrus.Fatal(err)
+		}
+		rc := crds.NewCRDClient(restClient, scheme, *namespace, crds.ResourcePlural)
+		cc := crds.NewCRDClient(restClient, scheme, *namespace, crds.ResourceConfigPlural)
+		s := ranch.NewCRDStorage(rc, cc)
+		storage = s
+	}
+
+	r, err := ranch.NewRanch(*configPath, storage)
 	if err != nil {
 		logrus.WithError(err).Fatalf("Failed to create ranch! Config: %v, kubeconfig : %v", *configPath, *kubeConfig)
 	}

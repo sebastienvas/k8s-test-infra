@@ -19,7 +19,11 @@ go_test(
 
 go_library(
     name = "go_default_library",
-    srcs = ["ranch.go"],
+    srcs = [
+        "crd_storage.go",
+        "memory_storage.go",
+        "ranch.go",
+    ],
     importpath = "k8s.io/test-infra/boskos/ranch",
     deps = [
         "//boskos/common:go_default_library",

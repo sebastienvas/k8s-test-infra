@@ -28,7 +28,6 @@ go_test(
         "//boskos/crds:go_default_library",
         "//boskos/gcp:go_default_library",
         "//boskos/ranch:go_default_library",
-        "//vendor/gopkg.in/yaml.v2:go_default_library",
     ],
 )
 

@@ -17,10 +17,12 @@ limitations under the License.
 package crds
 
 import (
+	"fmt"
+	"time"
+
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/test-infra/boskos/common"
-	"time"
 )
 
 const (
@@ -221,7 +223,7 @@ func (in *ResourceConfig) DeepCopyObject() runtime.Object {
 	return nil
 }
 
-func (in *ResourceConfig) ToResource() common.ResourceConfig {
+func (in *ResourceConfig) ToResourceConfig() common.ResourceConfig {
 	return common.ResourceConfig{
 		Name:   in.Name,
 		Config: in.Spec.Config,
@@ -251,10 +253,6 @@ func (in *ResourceConfigList) SetItems(objects []Object) {
 	in.Items = items
 }
 
-func (in *ResourceConfigList) GetName() string {
-	return "List"
-}
-
 func (in *ResourceConfigList) DeepCopyInto(out *ResourceConfigList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
@@ -276,4 +274,37 @@ func (in *ResourceConfigList) DeepCopyObject() runtime.Object {
 		return c
 	}
 	return nil
+}
+
+func RuntimeObjectToResource(o runtime.Object) (*Resource, error) {
+	r, ok := o.(*Resource)
+	if !ok {
+		return nil, fmt.Errorf("cannot construct CRD Resource from received object %v", o)
+	}
+	return r, nil
+}
+
+func RuntimeObjectToResourceList(o runtime.Object) (*ResourceList, error) {
+	r, ok := o.(*ResourceList)
+	if !ok {
+		return nil, fmt.Errorf("cannot construct CRD ResourceList from received object %v", o)
+	}
+	return r, nil
+}
+
+func RuntimeObjectToResourceConfig(o runtime.Object) (*ResourceConfig, error) {
+	r, ok := o.(*ResourceConfig)
+	if !ok {
+		return nil, fmt.Errorf("cannot construct CRD ResourceCongfig from received object %v", o)
+	}
+	return r, nil
+}
+
+func RuntimeObjectToResourceConfigList(o runtime.Object) (*ResourceConfigList, error) {
+	r, ok := o.(*ResourceConfigList)
+	if !ok {
+		return nil, fmt.Errorf("cannot construct CRD ResourceCongfigList from received object %v", o)
+
+	}
+	return r, nil
 }

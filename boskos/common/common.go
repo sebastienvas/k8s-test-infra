@@ -23,6 +23,11 @@ import (
 	"time"
 )
 
+const (
+	Dirty = "dirty"
+	Free  = "free"
+)
+
 // ResourceNeeds maps the type to count of resources types needed
 type ResourceNeeds map[string]int
 
@@ -94,3 +99,6 @@ func (rtypes *ResTypes) Set(value string) error {
 	}
 	return nil
 }
+
+func (res Resource) GetName() string        { return res.Name }
+func (conf ResourceConfig) GetName() string { return conf.Name }

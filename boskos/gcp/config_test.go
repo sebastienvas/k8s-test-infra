@@ -34,7 +34,7 @@ func TestParseConfig(t *testing.T) {
 	if err != nil {
 		t.Error("could not parse config")
 	}
-	config, err := configConverter(conf[0].Spec.Config.Content)
+	config, err := configConverter(conf[0].Config.Content)
 	if err != nil {
 		t.Errorf("cannot parse object")
 	} else {

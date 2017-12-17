@@ -113,13 +113,10 @@ func NewCRDClient(cl *rest.RESTClient, scheme *runtime.Scheme, namespace, plural
 		codec: runtime.NewParameterCodec(scheme)}
 }
 
-func NewCRDDummyClient(plural string, objects []Object) *CRDDummyClient {
+func NewCRDDummyClient(plural string) *CRDDummyClient {
 	c := CRDDummyClient{
 		plural:  plural,
 		objects: map[string]Object{},
-	}
-	for _, o := range objects {
-		c.objects[o.GetName()] = o
 	}
 	return &c
 }

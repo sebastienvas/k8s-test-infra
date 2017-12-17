@@ -28,10 +28,8 @@ import (
 )
 
 const (
-	Dirty            = "dirty"
 	Cleaning         = "cleaning"
 	Leased           = "leased"
-	Free             = "free"
 	Owner            = "Mason"
 	URL              = "http://boskos"
 	DefaultSleepTime = time.Minute
@@ -133,7 +131,7 @@ func (m *Mason) cleanAll() {
 	}()
 	for req := range m.fulfilled {
 		if err := m.cleanOne(&req.resource, req.fulfillment); err != nil {
-			m.client.ReleaseOne(req.resource.Name, Dirty)
+			m.client.ReleaseOne(req.resource.Name, common.Dirty)
 		} else {
 			m.cleaned <- req
 		}
@@ -183,7 +181,7 @@ func (m *Mason) freeOne(res *common.Resource) error {
 		return err
 	}
 	// Finally return the resource as freeOne
-	if err := m.client.ReleaseOne(res.Name, Free); err != nil {
+	if err := m.client.ReleaseOne(res.Name, common.Free); err != nil {
 		logrus.WithError(err).Errorf("failed to release resource %s", res.Name)
 		return err
 	}
@@ -203,14 +201,14 @@ func (m *Mason) recycleAll() {
 			return
 		case <-time.After(m.sleepTime):
 			for _, r := range m.typesToClean {
-				if res, err := m.client.Acquire(r, Dirty, Cleaning); err != nil {
+				if res, err := m.client.Acquire(r, common.Dirty, Cleaning); err != nil {
 					logrus.WithError(err).Debug("boskos acquire failed!")
 				} else if res == nil {
 					logrus.Fatal("nil resource was returned")
 				} else {
 					if req, err := m.recycleOne(res); err != nil {
 						logrus.WithError(err).Error("")
-						m.client.ReleaseOne(res.Name, Dirty)
+						m.client.ReleaseOne(res.Name, common.Dirty)
 					} else {
 						m.pending <- *req
 					}
@@ -229,7 +227,7 @@ func (m *Mason) recycleOne(res *common.Resource) (*Requirement, error) {
 
 	// Releasing leased resources
 	for _, l := range res.Info.LeasedResources {
-		if err := m.client.ReleaseOne(l, Dirty); err != nil {
+		if err := m.client.ReleaseOne(l, common.Dirty); err != nil {
 			logrus.WithError(err).Errorf("could not release resource %s", l)
 			return nil, err
 		}
@@ -253,7 +251,7 @@ func (m *Mason) fulfillAll() {
 		if err := m.fulfillOne(&req); err != nil {
 			for _, resources := range req.fulfillment {
 				for _, res := range resources {
-					if err := m.client.ReleaseOne(res.Name, Free); err != nil {
+					if err := m.client.ReleaseOne(res.Name, common.Free); err != nil {
 						logrus.WithError(err).Errorf("failed to release resource %s", res.Name)
 					}
 					logrus.Infof("Released resource %s", res.Name)
@@ -277,7 +275,7 @@ func (m *Mason) fulfillOne(req *Requirement) error {
 		if needs[rType] <= 0 {
 			continue
 		}
-		if res, err := m.client.Acquire(rType, Free, Leased); err != nil {
+		if res, err := m.client.Acquire(rType, common.Free, Leased); err != nil {
 			logrus.WithError(err).Debug("boskos acquire failed!")
 		} else {
 			req.fulfillment[rType] = append(req.fulfillment[rType], res)

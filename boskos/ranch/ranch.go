@@ -19,19 +19,16 @@ package ranch
 import (
 	"encoding/json"
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
-
-	"sync"
+	"reflect"
 	"time"
 
 	"github.com/deckarep/golang-set"
 	"github.com/hashicorp/go-multierror"
 	"github.com/sirupsen/logrus"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"gopkg.in/yaml.v2"
 	"k8s.io/test-infra/boskos/common"
-	"k8s.io/test-infra/boskos/crds"
-	"reflect"
+	"sync"
 )
 
 const (
@@ -40,11 +37,35 @@ const (
 
 // Ranch is the place which all of the Resource objects lives.
 type Ranch struct {
-	Resources      []common.Resource
-	ResourceClient crds.CRDClientInterface
-	ConfigClient   crds.CRDClientInterface
-	lock           sync.RWMutex
+	Storage       StorageInterface
+	resourcesLock sync.RWMutex
+	configsLock   sync.RWMutex
 }
+
+type StorageInterface interface {
+	AddResource(config common.Resource) error
+	DeleteResource(string) error
+	UpdateResource(common.Resource) error
+	GetResource(string) (common.Resource, error)
+	GetResources() ([]common.Resource, error)
+	AddConfig(common.ResourceConfig) error
+	DeleteConfig(string) error
+	UpdateConfig(common.ResourceConfig) error
+	GetConfig(string) (common.ResourceConfig, error)
+	GetConfigs() ([]common.ResourceConfig, error)
+}
+
+type ByUpdateTime []common.Resource
+
+func (ut ByUpdateTime) Len() int           { return len(ut) }
+func (ut ByUpdateTime) Swap(i, j int)      { ut[i], ut[j] = ut[j], ut[i] }
+func (ut ByUpdateTime) Less(i, j int) bool { return ut[i].LastUpdate.Before(ut[j].LastUpdate) }
+
+type ByName []common.Resource
+
+func (ut ByName) Len() int           { return len(ut) }
+func (ut ByName) Swap(i, j int)      { ut[i], ut[j] = ut[j], ut[i] }
+func (ut ByName) Less(i, j int) bool { return ut[i].Name < ut[j].Name }
 
 // Public errors:
 
@@ -90,14 +111,11 @@ func (s StateNotMatch) Error() string {
 // In: config - path to resource file
 //     storage - path to where to save/restore the state data
 // Out: A Ranch object, loaded from config/storage, or error
-func NewRanch(config string, resourceClient, configClient *crds.CRDclient) (*Ranch, error) {
+func NewRanch(config string, storage StorageInterface) (*Ranch, error) {
 
 	newRanch := &Ranch{
-		ResourceClient: resourceClient,
-		ConfigClient:   configClient,
+		Storage: storage,
 	}
-
-	newRanch.RestoreResources()
 
 	if err := newRanch.SyncConfig(config); err != nil {
 		return nil, err
@@ -108,14 +126,23 @@ func NewRanch(config string, resourceClient, configClient *crds.CRDclient) (*Ran
 	return newRanch, nil
 }
 
-func (r *Ranch) RestoreResources() error {
-	o, err := r.ResourceClient.List(v1.ListOptions{})
-	if err != nil {
+func (r *Ranch) updateResourceAndLeasedResources(res common.Resource) error {
+	if err := r.Storage.UpdateResource(res); err != nil {
+		logrus.WithError(err).Errorf("could not update resource %s", res.Name)
 		return err
 	}
-	l := o.(*crds.ResourceList)
-	for _, res := range l.Items {
-		r.Resources = append(r.Resources, res.ToResource())
+
+	for _, rName := range res.Info.LeasedResources {
+		lr, err := r.Storage.GetResource(rName)
+		if err != nil {
+			logrus.WithError(err).Errorf("could not find leased resource %s", rName)
+			return err
+		}
+		res.LastUpdate = time.Now()
+		if err := r.Storage.UpdateResource(lr); err != nil {
+			logrus.WithError(err).Errorf("could not update leased resource %s", rName)
+			return err
+		}
 	}
 	return nil
 }
@@ -128,34 +155,29 @@ func (r *Ranch) RestoreResources() error {
 //     owner - requester of the resource
 // Out: A valid Resource object on success, or
 //      ResourceNotFound error if target type resource does not exist in target state.
-func (r *Ranch) Acquire(rtype, state, dest, owner string) (*common.Resource, error) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+func (r *Ranch) Acquire(rType, state, dest, owner string) (*common.Resource, error) {
+	r.resourcesLock.Lock()
+	defer r.resourcesLock.Unlock()
 
-	for idx := range r.Resources {
-		res := r.Resources[idx]
-		if rtype == res.Type && state == res.State && res.Owner == "" {
+	resources, err := r.Storage.GetResources()
+	if err != nil {
+		logrus.WithError(err).Errorf("could not get resources")
+		return nil, &ResourceNotFound{rType}
+	}
+
+	for idx := range resources {
+		res := resources[idx]
+		if rType == res.Type && state == res.State && res.Owner == "" {
 			res.LastUpdate = time.Now()
 			res.Owner = owner
 			res.State = dest
-			copy(r.Resources[idx:], r.Resources[idx+1:])
-			r.Resources[len(r.Resources)-1] = res
-			if err := r.persistResource(res); err != nil {
+			if err = r.updateResourceAndLeasedResources(res); err != nil {
 				return nil, err
-			}
-			for _, rName := range res.Info.LeasedResources {
-				lr := r.searchByName(rName)
-				if lr != nil {
-					lr.LastUpdate = time.Now()
-					if err := r.persistResource(*lr); err != nil {
-						return &res, err
-					}
-				}
 			}
 			return &res, nil
 		}
 	}
-	return nil, &ResourceNotFound{rtype}
+	return nil, &ResourceNotFound{rType}
 }
 
 // GetConfig returns the StructInfo for a given config name.
@@ -164,18 +186,15 @@ func (r *Ranch) Acquire(rtype, state, dest, owner string) (*common.Resource, err
 //   A valid  StructInfo object on success, or
 //   ResourceConfigNotFound error if target named config does not exist.
 func (r *Ranch) GetConfig(name string) (*common.ResourceConfig, error) {
-	o, err := r.ConfigClient.Get(name)
+	r.configsLock.Lock()
+	defer r.configsLock.Unlock()
+
+	conf, err := r.Storage.GetConfig(name)
 	if err != nil {
 		logrus.WithError(err).Errorf("Unable to get config for %s", name)
 		return nil, ResourceConfigNotFound{name}
 	}
-	c := o.(*crds.ResourceConfig)
-	configEntry := common.ResourceConfig{
-		Needs:  c.Spec.Needs,
-		Name:   c.Name,
-		Config: c.Spec.Config,
-	}
-	return &configEntry, nil
+	return &conf, nil
 }
 
 // Release unsets owner for target resource and move it to a new state.
@@ -186,11 +205,12 @@ func (r *Ranch) GetConfig(name string) (*common.ResourceConfig, error) {
 //      OwnerNotMatch error if owner does not match current owner of the resource, or
 //      ResourceNotFound error if target named resource does not exist.
 func (r *Ranch) Release(name, dest, owner string) error {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.resourcesLock.Lock()
+	defer r.resourcesLock.Unlock()
 
-	res := r.searchByName(name)
-	if res == nil {
+	res, err := r.Storage.GetResource(name)
+	if err != nil {
+		logrus.WithError(err).Errorf("unable to release resource %s", name)
 		return &ResourceNotFound{name}
 	}
 	if owner != res.Owner {
@@ -199,38 +219,7 @@ func (r *Ranch) Release(name, dest, owner string) error {
 	res.LastUpdate = time.Now()
 	res.Owner = ""
 	res.State = dest
-	if err := r.persistResource(*res); err != nil {
-		return err
-	}
-
-	for _, rName := range res.Info.LeasedResources {
-		lr := r.searchByName(rName)
-		if lr != nil {
-			lr.LastUpdate = time.Now()
-			if err := r.persistResource(*lr); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (r *Ranch) persistResource(res common.Resource) error {
-	o, err := r.ResourceClient.Get(res.Name)
-	if err != nil {
-		logrus.WithError(err).Errorf("unable to find Resource %s", res.Name)
-		return err
-	}
-
-	ri := o.(*crds.Resource)
-	ri.FromResource(res)
-	logrus.Infof("Updating Resource %s", ri.Name)
-	if _, err := r.ResourceClient.Update(ri); err != nil {
-		logrus.WithError(err).Errorf("failed to update Resource %s", ri.Name)
-		return err
-	}
-	return nil
+	return r.updateResourceAndLeasedResources(res)
 }
 
 // Update updates the timestamp of a target resource.
@@ -243,11 +232,12 @@ func (r *Ranch) persistResource(res common.Resource) error {
 //      ResourceNotFound error if target named resource does not exist, or
 //      StateNotMatch error if state does not match current state of the resource.
 func (r *Ranch) Update(name, owner, state string, info *common.ResourceInfo) error {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.resourcesLock.Lock()
+	defer r.resourcesLock.Unlock()
 
-	res := r.searchByName(name)
-	if res == nil {
+	res, err := r.Storage.GetResource(name)
+	if err != nil {
+		logrus.WithError(err).Errorf("could not find resource %s for update", name)
 		return &ResourceNotFound{name}
 	}
 	if owner != res.Owner {
@@ -260,30 +250,7 @@ func (r *Ranch) Update(name, owner, state string, info *common.ResourceInfo) err
 		res.Info = *info
 	}
 	res.LastUpdate = time.Now()
-	if err := r.persistResource(*res); err != nil {
-		return err
-	}
-
-	for _, rName := range res.Info.LeasedResources {
-		lr := r.searchByName(rName)
-		if lr != nil {
-			res.LastUpdate = time.Now()
-			if err := r.persistResource(*lr); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (r *Ranch) searchByName(name string) *common.Resource {
-	for idx := range r.Resources {
-		res := &r.Resources[idx]
-		if name == res.Name {
-			return res
-		}
-	}
-	return nil
+	return r.updateResourceAndLeasedResources(res)
 }
 
 // Reset unstucks a type of stale resource to a new state.
@@ -293,30 +260,27 @@ func (r *Ranch) searchByName(name string) *common.Resource {
 //     dest - destination state of expired resources
 // Out: map of resource name - resource owner.
 func (r *Ranch) Reset(rtype, state string, expire time.Duration, dest string) (map[string]string, error) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.resourcesLock.Lock()
+	defer r.resourcesLock.Unlock()
 
 	ret := make(map[string]string)
 
-	for idx := range r.Resources {
-		res := &r.Resources[idx]
+	resources, err := r.Storage.GetResources()
+	if err != nil {
+		logrus.WithError(err).Errorf("cannot find resources")
+		return nil, err
+	}
+
+	for idx := range resources {
+		res := resources[idx]
 		if rtype == res.Type && state == res.State && res.Owner != "" {
 			if time.Now().Sub(res.LastUpdate) > expire {
 				res.LastUpdate = time.Now()
 				ret[res.Name] = res.Owner
 				res.Owner = ""
 				res.State = dest
-				if err := r.persistResource(*res); err != nil {
+				if err = r.updateResourceAndLeasedResources(res); err != nil {
 					return ret, err
-				}
-				for _, rName := range res.Info.LeasedResources {
-					lr := r.searchByName(rName)
-					if lr != nil {
-						res.LastUpdate = time.Now()
-						if err := r.persistResource(*lr); err != nil {
-							return ret, err
-						}
-					}
 				}
 			}
 		}
@@ -326,21 +290,21 @@ func (r *Ranch) Reset(rtype, state string, expire time.Duration, dest string) (m
 
 // LogStatus outputs current status of all resources
 func (r *Ranch) LogStatus() {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	resources, err := r.Storage.GetResources()
 
-	resJSON, err := json.Marshal(r.Resources)
 	if err != nil {
-		logrus.WithError(err).Errorf("Fail to marshal Resources. %v", r.Resources)
+		return
+	}
+
+	resJSON, err := json.Marshal(resources)
+	if err != nil {
+		logrus.WithError(err).Errorf("Fail to marshal Resources. %v", resources)
 	}
 	logrus.Infof("Current Resources : %v", string(resJSON))
 }
 
 // SyncConfig updates resource list from a file
 func (r *Ranch) SyncConfig(config string) error {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-
 	resources, configs, err := ParseConfig(config)
 	if err != nil {
 		return err
@@ -356,7 +320,7 @@ func (r *Ranch) SyncConfig(config string) error {
 
 // ParseConfig reads in configPath and returns a list of resource objects
 // on success.
-func ParseConfig(configPath string) ([]common.Resource, []crds.ResourceConfig, error) {
+func ParseConfig(configPath string) ([]common.Resource, []common.ResourceConfig, error) {
 	file, err := ioutil.ReadFile(configPath)
 	if err != nil {
 		return nil, nil, err
@@ -372,11 +336,8 @@ func ParseConfig(configPath string) ([]common.Resource, []crds.ResourceConfig, e
 	actualResources := map[string]int{}
 
 	configNames := map[string]map[string]int{}
-	var configs []crds.ResourceConfig
-	for _, c := range data.Configs {
-		conf := &crds.ResourceConfig{}
-		conf.FromResource(c)
-		configs = append(configs, *conf)
+	configs := data.Configs
+	for _, c := range configs {
 		configNames[c.Name] = c.Needs
 	}
 
@@ -421,29 +382,31 @@ func ParseConfig(configPath string) ([]common.Resource, []crds.ResourceConfig, e
 	return resources, configs, nil
 }
 
-func (r *Ranch) syncConfigs(newConfigs []crds.ResourceConfig) error {
-	o, err := r.ConfigClient.List(v1.ListOptions{})
+func (r *Ranch) syncConfigs(newConfigs []common.ResourceConfig) error {
+	r.configsLock.Lock()
+	defer r.configsLock.Unlock()
+
+	currentConfigs, err := r.Storage.GetConfigs()
 	if err != nil {
-		logrus.WithError(err).Error("cannot list config")
+		logrus.WithError(err).Error("cannot find configs")
 		return err
 	}
-	currentConfigs := o.(*crds.ResourceConfigList).Items
 
 	currentSet := mapset.NewSet()
 	newSet := mapset.NewSet()
 	toUpdate := mapset.NewSet()
 
-	configs := map[string]crds.ResourceConfig{}
+	configs := map[string]common.ResourceConfig{}
 
 	for _, c := range currentConfigs {
 		currentSet.Add(c.Name)
-		configs[c.Name] = *c
+		configs[c.Name] = c
 	}
 
 	for _, c := range newConfigs {
 		newSet.Add(c.Name)
 		if old, exists := configs[c.Name]; exists {
-			if !reflect.DeepEqual(old.Spec, c.Spec) {
+			if !reflect.DeepEqual(old, c) {
 				toUpdate.Add(c.Name)
 				configs[c.Name] = c
 			}
@@ -458,7 +421,7 @@ func (r *Ranch) syncConfigs(newConfigs []crds.ResourceConfig) error {
 	toAdd := newSet.Difference(currentSet)
 
 	for _, n := range toDelete.ToSlice() {
-		if err := r.ConfigClient.Delete(n.(string), v1.NewDeleteOptions(DeleteGracePeriodSeconds)); err != nil {
+		if err := r.Storage.DeleteConfig(n.(string)); err != nil {
 			logrus.WithError(err).Errorf("failed to delete config %s", n)
 			finalError = multierror.Append(finalError, err)
 		}
@@ -466,7 +429,7 @@ func (r *Ranch) syncConfigs(newConfigs []crds.ResourceConfig) error {
 
 	for _, n := range toAdd.ToSlice() {
 		rc := configs[n.(string)]
-		if _, err := r.ConfigClient.Create(&rc); err != nil {
+		if err := r.Storage.AddConfig(rc); err != nil {
 			logrus.WithError(err).Errorf("failed to create resources %s", n)
 			finalError = multierror.Append(finalError, err)
 		}
@@ -474,7 +437,7 @@ func (r *Ranch) syncConfigs(newConfigs []crds.ResourceConfig) error {
 
 	for _, n := range toUpdate.ToSlice() {
 		rc := configs[n.(string)]
-		if _, err := r.ConfigClient.Update(&rc); err != nil {
+		if err := r.Storage.UpdateConfig(rc); err != nil {
 			logrus.WithError(err).Errorf("failed to update resources %s", n)
 			finalError = multierror.Append(finalError, err)
 		}
@@ -489,21 +452,30 @@ func (r *Ranch) syncConfigs(newConfigs []crds.ResourceConfig) error {
 // If the newly deleted resource is currently held by a user, the deletion will
 // yield to next update cycle.
 func (r *Ranch) syncResources(data []common.Resource) error {
+	r.resourcesLock.Lock()
+	defer r.resourcesLock.Unlock()
+
+	resources, err := r.Storage.GetResources()
+	if err != nil {
+		logrus.WithError(err).Error("cannot find resources")
+		return err
+	}
+
 	var finalError error
 
 	// delete non-exist resource
 	valid := 0
-	for _, res := range r.Resources {
+	for _, res := range resources {
 		// If currently busy, yield deletion to later cycles.
 		if res.Owner != "" {
-			r.Resources[valid] = res
+			resources[valid] = res
 			valid++
 			continue
 		}
 		toDelete := true
 		for _, newRes := range data {
 			if res.Name == newRes.Name {
-				r.Resources[valid] = res
+				resources[valid] = res
 				valid++
 				toDelete = false
 				break
@@ -511,44 +483,56 @@ func (r *Ranch) syncResources(data []common.Resource) error {
 		}
 		if toDelete {
 			logrus.Infof("Deleting resource %s", res.Name)
-			if err := r.ResourceClient.Delete(res.Name, v1.NewDeleteOptions(DeleteGracePeriodSeconds)); err != nil {
+			for _, name := range res.Info.LeasedResources {
+				lr, err := r.Storage.GetResource(name)
+				if err != nil {
+					logrus.WithError(err).Errorf("cannot release resource %s for resource to be deleted %s", name, res.Name)
+					return err
+				}
+				lr.State = common.Dirty
+				if err = r.updateResourceAndLeasedResources(lr); err != nil {
+					logrus.WithError(err).Errorf("unable to release resource as dirty")
+				}
+			}
+			if err := r.Storage.DeleteResource(res.Name); err != nil {
 				finalError = multierror.Append(finalError, err)
 				logrus.WithError(err).Errorf("unable to delete resource %s", res.Name)
 			}
 		}
 	}
-	r.Resources = r.Resources[:valid]
+	resources = resources[:valid]
 
 	// add new resource
 	for _, p := range data {
 		found := false
-		for idx := range r.Resources {
-			exist := r.Resources[idx]
+		for idx := range resources {
+			exist := resources[idx]
 			if p.Name == exist.Name {
 				found = true
 				logrus.Infof("Keeping resource %s", p.Name)
-				// If the resource already exists, we want to use the latest configuration
-				if p.UseConfig != exist.UseConfig || p.Type != exist.Type {
-					exist.UseConfig = p.UseConfig
-					exist.Type = p.Type
-					if err := r.persistResource(exist); err != nil {
-						finalError = multierror.Append(finalError, err)
+				// If the resource already exists and is not being used, we want to use the latest configuration
+				if exist.Owner == "" {
+					if p.UseConfig != exist.UseConfig || p.Type != exist.Type {
+						exist.UseConfig = p.UseConfig
+						exist.Type = p.Type
+						if err := r.Storage.UpdateResource(exist); err != nil {
+							finalError = multierror.Append(finalError, err)
+						}
 					}
 				}
+
 				break
 			}
 		}
 
 		if !found {
 			if p.State == "" {
-				p.State = "free"
+				p.State = common.Free
 			}
 			logrus.Infof("Adding resource %s", p.Name)
-			r.Resources = append(r.Resources, p)
-			ri := new(crds.Resource)
-			ri.FromResource(p)
-			if _, err := r.ResourceClient.Create(ri); err != nil {
-				logrus.WithError(err).Errorf("unable to add resource %s", ri.Name)
+			resources = append(resources, p)
+			if err := r.Storage.AddResource(p); err != nil {
+				logrus.WithError(err).Errorf("unable to add resource %s", p.Name)
 				finalError = multierror.Append(finalError, err)
 			}
 		}
@@ -564,7 +548,13 @@ func (r *Ranch) Metric(rtype string) (common.Metric, error) {
 		Owners:  map[string]int{},
 	}
 
-	for _, res := range r.Resources {
+	resources, err := r.Storage.GetResources()
+	if err != nil {
+		logrus.WithError(err).Error("cannot find resources")
+		return metric, &ResourceNotFound{rtype}
+	}
+
+	for _, res := range resources {
 		if res.Type != rtype {
 			continue
 		}

@@ -77,11 +77,11 @@ func createFakeBoskos(tc testConfig) *fakeBoskos {
 			res := common.Resource{
 				Type:  rtype,
 				Name:  fmt.Sprintf("%s_%d", rtype, i),
-				State: Free,
+				State: common.Free,
 			}
 			if c.resourceNeeds != nil {
 				res.UseConfig = true
-				res.State = Dirty
+				res.State = common.Dirty
 				if _, ok := configs[rtype]; !ok {
 					configs[rtype] = &common.ResourceConfig{
 						Config: common.TypedContent{
@@ -184,7 +184,7 @@ func TestRecycleLeasedResources(t *testing.T) {
 	if bclient.resources["type2_0"].State != Cleaning {
 		t.Errorf("Resource state should be cleaning")
 	}
-	if bclient.resources["type1_0"].State != Dirty {
+	if bclient.resources["type1_0"].State != common.Dirty {
 		t.Errorf("Resource state should be dirty")
 	}
 }
@@ -217,7 +217,7 @@ func TestRecycleNoLeasedResources(t *testing.T) {
 	if bclient.resources["type2_0"].State != Cleaning {
 		t.Errorf("Resource state should be cleaning")
 	}
-	if bclient.resources["type1_0"].State != Free {
+	if bclient.resources["type1_0"].State != common.Free {
 		t.Errorf("Resource state should be untouched, current %s", bclient.resources["type1_0"].State)
 	}
 }
@@ -286,7 +286,7 @@ func TestManson(t *testing.T) {
 					t.Errorf("resource %v should be leased", res)
 				}
 			case "type2":
-				if res.State != Free {
+				if res.State != common.Free {
 					t.Errorf("resource %v should be freeOne", res)
 				}
 			default:
@@ -294,11 +294,11 @@ func TestManson(t *testing.T) {
 			}
 		}
 	}
-	res, err := bclient.Acquire("type2", Free, "Used")
+	res, err := bclient.Acquire("type2", common.Free, "Used")
 	if err != nil {
 		t.Error("There should be free resources")
 	}
-	bclient.ReleaseOne(res.Name, Dirty)
+	bclient.ReleaseOne(res.Name, common.Dirty)
 	m.Stop()
 }
 
