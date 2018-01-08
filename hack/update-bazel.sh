@@ -33,6 +33,9 @@ find ${TESTINFRA_ROOT}/vendor/ -name "*_test.go" -delete
 # ref: https://github.com/kubernetes/kubernetes/blob/4e2f5e2212b05a305435ef96f4b49dc0932e1264/staging/src/k8s.io/apimachinery/pkg/util/sets/BUILD#L23-L49
 rm -f ${TESTINFRA_ROOT}/vendor/k8s.io/apimachinery/pkg/util/sets/BUILD
 
+# manually remove _workspace as it interferes with bazel build
+rm -rf ${TESTINFRA_ROOT}/vendor/k8s.io/contrib/compare/Godeps/_workspace
+
 "${TESTINFRA_ROOT}/hack/go_install_from_commit.sh" \
   github.com/kubernetes/repo-infra/kazel \
   e26fc85d14a1d3dc25569831acc06919673c545a \
