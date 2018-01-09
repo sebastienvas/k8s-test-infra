@@ -100,10 +100,8 @@ func (c *Client) ReleaseOne(name string, dest string) error {
 		if r == name {
 			c.resources[idx] = c.resources[len(c.resources)-1]
 			c.resources = c.resources[:len(c.resources)-1]
-			if err := c.release(r, dest); err != nil {
-				return err
-			}
-			return nil
+			err := c.release(r, dest)
+			return err
 		}
 	}
 
@@ -135,10 +133,8 @@ func (c *Client) UpdateOne(name string, state string, info *common.ResourceInfo)
 
 	for _, r := range c.resources {
 		if r == name {
-			if err := c.update(r, state, info); err != nil {
-				return err
-			}
-			return nil
+			err := c.update(r, state, info)
+			return err
 		}
 	}
 
@@ -276,10 +272,7 @@ func (c *Client) reset(rtype string, state string, expire time.Duration, dest st
 		}
 
 		err = json.Unmarshal(body, &rmap)
-		if err != nil {
-			return rmap, err
-		}
-		return rmap, nil
+		return rmap, err
 	}
 
 	return rmap, fmt.Errorf("status %s, status code %v", resp.Status, resp.StatusCode)
@@ -303,9 +296,5 @@ func (c *Client) metric(rtype string) (common.Metric, error) {
 	}
 
 	err = json.Unmarshal(body, &metric)
-	if err != nil {
-		return metric, err
-	}
-
-	return metric, nil
+	return metric, err
 }

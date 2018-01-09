@@ -52,7 +52,7 @@ type ResourceConfig struct {
 }
 
 type GKEClusterInfo struct {
-	kubeconfig string `json:"kubeconfig"`
+	Kubeconfig string `json:"kubeconfig"`
 }
 
 type GCEVMInfo struct {
@@ -67,7 +67,7 @@ type ProjectInfo struct {
 }
 
 type ResourceInfo struct {
-	ProjectsInfo []ProjectInfo `json:projectsinfo,omitempty`
+	ProjectsInfo []ProjectInfo `json:"projectsinfo,omitempty"`
 }
 
 func (rc *ResourceConfig) Construct(res *common.Resource, types common.TypeToResources) (*common.ResourceInfo, error) {

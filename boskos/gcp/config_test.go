@@ -17,10 +17,10 @@ limitations under the License.
 package gcp
 
 import (
+	"reflect"
 	"testing"
 
 	"k8s.io/test-infra/boskos/ranch"
-	"reflect"
 )
 
 func TestParseConfig(t *testing.T) {

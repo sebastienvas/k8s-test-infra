@@ -131,7 +131,10 @@ func (m *Mason) cleanAll() {
 	}()
 	for req := range m.fulfilled {
 		if err := m.cleanOne(&req.resource, req.fulfillment); err != nil {
-			m.client.ReleaseOne(req.resource.Name, common.Dirty)
+			err = m.client.ReleaseOne(req.resource.Name, common.Dirty)
+			if err != nil {
+				logrus.WithError(err).Errorf("Unable to release resource %s", req.resource.Name)
+			}
 		} else {
 			m.cleaned <- req
 		}
@@ -208,7 +211,10 @@ func (m *Mason) recycleAll() {
 				} else {
 					if req, err := m.recycleOne(res); err != nil {
 						logrus.WithError(err).Error("")
-						m.client.ReleaseOne(res.Name, common.Dirty)
+						err := m.client.ReleaseOne(res.Name, common.Dirty)
+						if err != nil {
+							logrus.WithError(err).Errorf("Unable to release resource %s", err)
+						}
 					} else {
 						m.pending <- *req
 					}
@@ -279,7 +285,7 @@ func (m *Mason) fulfillOne(req *Requirement) error {
 			logrus.WithError(err).Debug("boskos acquire failed!")
 		} else {
 			req.fulfillment[rType] = append(req.fulfillment[rType], res)
-			needs[rType] -= 1
+			needs[rType]--
 		}
 		time.Sleep(m.sleepTime)
 	}

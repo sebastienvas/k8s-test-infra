@@ -39,17 +39,13 @@ func NewCRDStorage(resourceClient, configClient crds.CRDClientInterface) *CRDSto
 func (cs *CRDStorage) AddResource(resource common.Resource) error {
 	var r crds.Resource
 	r.FromResource(resource)
-	if _, err := cs.resourceClient.Create(&r); err != nil {
-		return err
-	}
-	return nil
+	_, err := cs.resourceClient.Create(&r)
+	return err
 }
 
 func (cs *CRDStorage) DeleteResource(name string) error {
-	if err := cs.resourceClient.Delete(name, v1.NewDeleteOptions(DeleteGracePeriodSeconds)); err != nil {
-		return err
-	}
-	return nil
+	err := cs.resourceClient.Delete(name, v1.NewDeleteOptions(DeleteGracePeriodSeconds))
+	return err
 }
 
 func (cs *CRDStorage) UpdateResource(resource common.Resource) error {
@@ -63,10 +59,9 @@ func (cs *CRDStorage) UpdateResource(resource common.Resource) error {
 		return err
 	}
 	r.FromResource(resource)
-	if _, err = cs.resourceClient.Update(r); err != nil {
-		return err
-	}
-	return nil
+	_, err = cs.resourceClient.Update(r)
+	return err
+
 }
 
 func (cs *CRDStorage) GetResource(name string) (common.Resource, error) {
@@ -103,17 +98,13 @@ func (cs *CRDStorage) GetResources() ([]common.Resource, error) {
 func (cs *CRDStorage) AddConfig(config common.ResourceConfig) error {
 	var r crds.ResourceConfig
 	r.FromResource(config)
-	if _, err := cs.configClient.Create(&r); err != nil {
-		return err
-	}
-	return nil
+	_, err := cs.configClient.Create(&r)
+	return err
 }
 
 func (cs *CRDStorage) DeleteConfig(name string) error {
-	if err := cs.configClient.Delete(name, v1.NewDeleteOptions(DeleteGracePeriodSeconds)); err != nil {
-		return err
-	}
-	return nil
+	err := cs.configClient.Delete(name, v1.NewDeleteOptions(DeleteGracePeriodSeconds))
+	return err
 }
 
 func (cs *CRDStorage) UpdateConfig(config common.ResourceConfig) error {
@@ -127,10 +118,8 @@ func (cs *CRDStorage) UpdateConfig(config common.ResourceConfig) error {
 		return err
 	}
 	r.FromResource(config)
-	if _, err = cs.configClient.Update(r); err != nil {
-		return err
-	}
-	return nil
+	_, err = cs.configClient.Update(r)
+	return err
 }
 
 func (cs *CRDStorage) GetConfig(name string) (common.ResourceConfig, error) {

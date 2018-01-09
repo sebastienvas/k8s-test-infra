@@ -277,21 +277,19 @@ func TestManson(t *testing.T) {
 	m := NewMason(masonTypes, 5, bclient, time.Millisecond)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()
-	select {
-	case <-time.After(2 * time.Second):
-		for _, res := range bclient.resources {
-			switch res.Type {
-			case "type1":
-				if res.State != Leased {
-					t.Errorf("resource %v should be leased", res)
-				}
-			case "type2":
-				if res.State != common.Free {
-					t.Errorf("resource %v should be freeOne", res)
-				}
-			default:
-				t.Errorf("resource type %s not expected", res.Type)
+	<-time.After(2 * time.Second)
+	for _, res := range bclient.resources {
+		switch res.Type {
+		case "type1":
+			if res.State != Leased {
+				t.Errorf("resource %v should be leased", res)
 			}
+		case "type2":
+			if res.State != common.Free {
+				t.Errorf("resource %v should be freeOne", res)
+			}
+		default:
+			t.Errorf("resource type %s not expected", res.Type)
 		}
 	}
 	res, err := bclient.Acquire("type2", common.Free, "Used")

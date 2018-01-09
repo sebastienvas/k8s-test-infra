@@ -114,11 +114,15 @@ func (s StateNotMatch) Error() string {
 func NewRanch(config string, storage StorageInterface) (*Ranch, error) {
 
 	newRanch := &Ranch{
-		Storage: storage,
+		Storage:       storage,
+		configsLock:   sync.RWMutex{},
+		resourcesLock: sync.RWMutex{},
 	}
 
-	if err := newRanch.SyncConfig(config); err != nil {
-		return nil, err
+	if config != "" {
+		if err := newRanch.SyncConfig(config); err != nil {
+			return nil, err
+		}
 	}
 
 	newRanch.LogStatus()
@@ -274,7 +278,7 @@ func (r *Ranch) Reset(rtype, state string, expire time.Duration, dest string) (m
 	for idx := range resources {
 		res := resources[idx]
 		if rtype == res.Type && state == res.State && res.Owner != "" {
-			if time.Now().Sub(res.LastUpdate) > expire {
+			if time.Since(res.LastUpdate) > expire {
 				res.LastUpdate = time.Now()
 				ret[res.Name] = res.Owner
 				res.Owner = ""
@@ -344,15 +348,15 @@ func ParseConfig(configPath string) ([]common.Resource, []common.ResourceConfig,
 	var resources []common.Resource
 	for _, res := range data.Resources {
 		if res.UseConfig {
-			if c, ok := configNames[res.Type]; !ok {
+			c, ok := configNames[res.Type]
+			if !ok {
 				err := fmt.Errorf("resource type %s does not have associated config", res.Type)
 				logrus.WithError(err).Error("using useconfig implies associated config")
 				return nil, nil, err
-			} else {
-				// Updating resourceNeeds
-				for k, v := range c {
-					resourcesNeeds[k] += v
-				}
+			}
+			// Updating resourceNeeds
+			for k, v := range c {
+				resourcesNeeds[k] += v
 			}
 		}
 		for _, name := range res.Names {

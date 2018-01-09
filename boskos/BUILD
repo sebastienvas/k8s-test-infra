@@ -17,10 +17,7 @@ go_binary(
 go_test(
     name = "go_default_test",
     srcs = ["boskos_test.go"],
-    data = [
-        "config.yaml",
-        "test-config.yaml",
-    ],
+    data = [":testdata"],
     embed = [":go_default_library"],
     importpath = "k8s.io/test-infra/boskos",
     deps = [
@@ -42,6 +39,14 @@ go_library(
         "//vendor/github.com/sirupsen/logrus:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
         "//vendor/k8s.io/client-go/rest:go_default_library",
+    ],
+)
+
+filegroup(
+    name = "testdata",
+    srcs = [
+        "config.yaml",
+        "test-config.yaml",
     ],
 )
 

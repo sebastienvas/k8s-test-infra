@@ -94,12 +94,9 @@ func main() {
 
 	go func() {
 		logTick := time.NewTicker(time.Minute).C
-		for {
-			select {
-			case <-logTick:
-				if err := update(boskos); err != nil {
-					logrus.WithError(err).Warning("[Boskos Metrics]Update failed!")
-				}
+		for range logTick {
+			if err := update(boskos); err != nil {
+				logrus.WithError(err).Warning("[Boskos Metrics]Update failed!")
 			}
 		}
 	}()

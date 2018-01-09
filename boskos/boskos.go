@@ -55,11 +55,12 @@ func main() {
 		storage = s
 
 	} else {
-		if err := crds.RegisterResources(config); err != nil {
+		if err = crds.RegisterResources(config); err != nil {
 			logrus.Fatal(err)
 		}
 		// creates the clientset
-		restClient, err := rest.RESTClientFor(config)
+		var restClient *rest.RESTClient
+		restClient, err = rest.RESTClientFor(config)
 		if err != nil {
 			logrus.Fatal(err)
 		}
@@ -131,7 +132,7 @@ func handleAcquire(r *ranch.Ranch) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
 		logrus.WithField("handler", "handleStart").Infof("From %v", req.RemoteAddr)
 
-		if req.Method != "POST" {
+		if req.Method != http.MethodPost {
 			msg := fmt.Sprintf("Method %v, /acquire only accepts POST.", req.Method)
 			logrus.Warning(msg)
 			http.Error(res, msg, http.StatusMethodNotAllowed)
@@ -169,7 +170,6 @@ func handleAcquire(r *ranch.Ranch) http.HandlerFunc {
 		}
 		logrus.Infof("Resource leased: %v", string(resJSON))
 		fmt.Fprint(res, string(resJSON))
-		return
 	}
 }
 
@@ -181,7 +181,7 @@ func handleGetConfig(r *ranch.Ranch) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
 		logrus.WithField("handler", "handleStart").Infof("From %v", req.RemoteAddr)
 
-		if req.Method != "POST" {
+		if req.Method != http.MethodPost {
 			msg := fmt.Sprintf("Method %v, /acquire only accepts POST.", req.Method)
 			logrus.Warning(msg)
 			http.Error(res, msg, http.StatusMethodNotAllowed)
@@ -215,7 +215,6 @@ func handleGetConfig(r *ranch.Ranch) http.HandlerFunc {
 		}
 		logrus.Infof("Config found: %v", string(resJSON))
 		fmt.Fprint(res, string(resJSON))
-		return
 	}
 }
 
@@ -229,7 +228,7 @@ func handleRelease(r *ranch.Ranch) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
 		logrus.WithField("handler", "handleDone").Infof("From %v", req.RemoteAddr)
 
-		if req.Method != "POST" {
+		if req.Method != http.MethodPost {
 			msg := fmt.Sprintf("Method %v, /release only accepts POST.", req.Method)
 			logrus.Warning(msg)
 			http.Error(res, msg, http.StatusMethodNotAllowed)
@@ -267,7 +266,7 @@ func handleReset(r *ranch.Ranch) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
 		logrus.WithField("handler", "handleReset").Infof("From %v", req.RemoteAddr)
 
-		if req.Method != "POST" {
+		if req.Method != http.MethodPost {
 			msg := fmt.Sprintf("Method %v, /reset only accepts POST.", req.Method)
 			logrus.Warning(msg)
 			http.Error(res, msg, http.StatusMethodNotAllowed)
@@ -323,7 +322,7 @@ func handleUpdate(r *ranch.Ranch) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
 		logrus.WithField("handler", "handleUpdate").Infof("From %v", req.RemoteAddr)
 
-		if req.Method != "POST" {
+		if req.Method != http.MethodPost {
 			msg := fmt.Sprintf("Method %v, /update only accepts POST.", req.Method)
 			logrus.Warning(msg)
 			http.Error(res, msg, http.StatusMethodNotAllowed)
@@ -368,7 +367,7 @@ func handleMetric(r *ranch.Ranch) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
 		logrus.WithField("handler", "handleMetric").Infof("From %v", req.RemoteAddr)
 
-		if req.Method != "GET" {
+		if req.Method != http.MethodGet {
 			logrus.Warning("[BadRequest]method %v, expect GET", req.Method)
 			http.Error(res, "/metric only accepts GET", http.StatusMethodNotAllowed)
 			return

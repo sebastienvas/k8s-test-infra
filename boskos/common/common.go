@@ -90,12 +90,12 @@ func (r *ResTypes) String() string {
 	return fmt.Sprint(*r)
 }
 
-func (rtypes *ResTypes) Set(value string) error {
-	if len(*rtypes) > 0 {
+func (r *ResTypes) Set(value string) error {
+	if len(*r) > 0 {
 		return errors.New("resTypes flag already set")
 	}
 	for _, rtype := range strings.Split(value, ",") {
-		*rtypes = append(*rtypes, rtype)
+		*r = append(*r, rtype)
 	}
 	return nil
 }

@@ -126,7 +126,7 @@ func NewInMemStorage(storage string) (*InMemStorage, error) {
 		buf, err := ioutil.ReadFile(storage)
 		if err == nil {
 			logrus.Infof("Current state: %v.", buf)
-			err = json.Unmarshal(buf, data)
+			err = json.Unmarshal(buf, &data)
 			if err != nil {
 				return nil, err
 			}
@@ -135,7 +135,9 @@ func NewInMemStorage(storage string) (*InMemStorage, error) {
 		}
 	}
 	for _, res := range data.resources {
-		im.AddResource(res)
+		if err := im.AddResource(res); err != nil {
+			return nil, err
+		}
 	}
 	return im, nil
 }

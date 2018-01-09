@@ -100,7 +100,7 @@ func waitTimeout(wg *sync.WaitGroup, timeout time.Duration) bool {
 }
 
 func TestNormal(t *testing.T) {
-	var totalClean int32 = 0
+	var totalClean int32
 
 	fakeClean := func(p string) error {
 		atomic.AddInt32(&totalClean, 1)
