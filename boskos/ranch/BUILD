@@ -8,7 +8,10 @@ load(
 
 go_test(
     name = "go_default_test",
-    srcs = ["ranch_test.go"],
+    srcs = [
+        "ranch_test.go",
+        "storage_test.go",
+    ],
     embed = [":go_default_library"],
     importpath = "k8s.io/test-infra/boskos/ranch",
     deps = [

@@ -150,6 +150,10 @@ func (c *CRDDummyClient) Create(obj Object) (Object, error) {
 }
 
 func (c *CRDDummyClient) Update(obj Object) (Object, error) {
+	_, ok := c.objects[obj.GetName()]
+	if !ok {
+		return nil, fmt.Errorf("cannot find object %s", obj.GetName())
+	}
 	c.objects[obj.GetName()] = obj
 	return obj, nil
 }

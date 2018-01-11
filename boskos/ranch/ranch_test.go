@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"fmt"
 	"k8s.io/test-infra/boskos/common"
 	"k8s.io/test-infra/boskos/crds"
 )
@@ -702,7 +703,7 @@ func TestMetric(t *testing.T) {
 	}
 }
 
-func TestSyncConfig(t *testing.T) {
+func TestSyncResources(t *testing.T) {
 	var testcases = []struct {
 		name   string
 		oldRes []common.Resource
@@ -872,10 +873,126 @@ func TestSyncConfig(t *testing.T) {
 			t.Errorf("failed to get resources")
 			continue
 		}
-		sort.Stable(ByName(resources))
-		sort.Stable(ByName(tc.expect))
+		sort.Stable(ResourceByName(resources))
+		sort.Stable(ResourceByName(tc.expect))
 		if !reflect.DeepEqual(resources, tc.expect) {
 			t.Errorf("Test %v: got %v, expect %v", tc.name, resources, tc.expect)
+		}
+	}
+}
+
+func fakeConfig(name, cType, content string, needs int) common.ResourceConfig {
+	c := common.ResourceConfig{
+		Name:  name,
+		Needs: common.ResourceNeeds{},
+		Config: common.TypedContent{
+			Type:    cType,
+			Content: content,
+		},
+	}
+	for i := 0; i < needs; i++ {
+		c.Needs[fmt.Sprintf("type_%s", i)] = i
+	}
+	return c
+}
+
+func TestSyncConfig(t *testing.T) {
+	var testcases = []struct {
+		name      string
+		oldConfig []common.ResourceConfig
+		newConfig []common.ResourceConfig
+		expect    []common.ResourceConfig
+	}{
+		{
+			name: "empty",
+		},
+		{
+			name: "deleteAll",
+			oldConfig: []common.ResourceConfig{
+				fakeConfig("config1", "fakeType", "", 2),
+				fakeConfig("config2", "fakeType", "", 3),
+				fakeConfig("config3", "fakeType", "", 4),
+			},
+		},
+		{
+			name: "new",
+			newConfig: []common.ResourceConfig{
+				fakeConfig("config1", "fakeType", "", 2),
+				fakeConfig("config2", "fakeType", "", 3),
+				fakeConfig("config3", "fakeType", "", 4),
+			},
+			expect: []common.ResourceConfig{
+				fakeConfig("config1", "fakeType", "", 2),
+				fakeConfig("config2", "fakeType", "", 3),
+				fakeConfig("config3", "fakeType", "", 4),
+			},
+		},
+		{
+			name: "noChange",
+			oldConfig: []common.ResourceConfig{
+				fakeConfig("config1", "fakeType", "", 2),
+				fakeConfig("config2", "fakeType", "", 3),
+				fakeConfig("config3", "fakeType", "", 4),
+			},
+			newConfig: []common.ResourceConfig{
+				fakeConfig("config1", "fakeType", "", 2),
+				fakeConfig("config2", "fakeType", "", 3),
+				fakeConfig("config3", "fakeType", "", 4),
+			},
+			expect: []common.ResourceConfig{
+				fakeConfig("config1", "fakeType", "", 2),
+				fakeConfig("config2", "fakeType", "", 3),
+				fakeConfig("config3", "fakeType", "", 4),
+			},
+		},
+		{
+			name: "update",
+			oldConfig: []common.ResourceConfig{
+				fakeConfig("config1", "fakeType", "", 2),
+				fakeConfig("config2", "fakeType", "", 3),
+				fakeConfig("config3", "fakeType", "", 4),
+			},
+			newConfig: []common.ResourceConfig{
+				fakeConfig("config1", "fakeType2", "", 2),
+				fakeConfig("config2", "fakeType", "something", 3),
+				fakeConfig("config3", "fakeType", "", 5),
+			},
+			expect: []common.ResourceConfig{
+				fakeConfig("config1", "fakeType2", "", 2),
+				fakeConfig("config2", "fakeType", "something", 3),
+				fakeConfig("config3", "fakeType", "", 5),
+			},
+		},
+		{
+			name: "delete",
+			oldConfig: []common.ResourceConfig{
+				fakeConfig("config1", "fakeType", "", 2),
+				fakeConfig("config2", "fakeType", "", 3),
+				fakeConfig("config3", "fakeType", "", 4),
+			},
+			newConfig: []common.ResourceConfig{
+				fakeConfig("config1", "fakeType2", "", 2),
+				fakeConfig("config3", "fakeType", "", 5),
+			},
+			expect: []common.ResourceConfig{
+				fakeConfig("config1", "fakeType2", "", 2),
+				fakeConfig("config3", "fakeType", "", 5),
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		c := MakeTestRanch(nil, tc.oldConfig)
+		c.syncConfigs(tc.newConfig)
+		configs, err := c.Storage.GetConfigs()
+		if err != nil {
+			t.Errorf("failed to get resources")
+			continue
+		}
+		sort.Stable(ConfigByName(configs))
+		sort.Stable(ConfigByName(tc.expect))
+		if !reflect.DeepEqual(configs, tc.expect) {
+			t.Errorf("Test %v: got %v, expect %v", tc.name, configs, tc.expect)
 		}
 	}
 }

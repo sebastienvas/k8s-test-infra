@@ -260,7 +260,7 @@ func TestFulfillOne(t *testing.T) {
 
 }
 
-func TestManson(t *testing.T) {
+func TestMason(t *testing.T) {
 	masonTypes := []string{"type2"}
 	tc := testConfig{
 		"type1": {
@@ -300,7 +300,7 @@ func TestManson(t *testing.T) {
 	m.Stop()
 }
 
-func TestMansonStartStop(t *testing.T) {
+func TestMasonStartStop(t *testing.T) {
 	masonTypes := []string{"type2"}
 	tc := testConfig{
 		"type1": {

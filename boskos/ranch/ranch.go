@@ -42,17 +42,23 @@ type Ranch struct {
 	configsLock   sync.RWMutex
 }
 
-type ByUpdateTime []common.Resource
+type ResourceByUpdateTime []common.Resource
 
-func (ut ByUpdateTime) Len() int           { return len(ut) }
-func (ut ByUpdateTime) Swap(i, j int)      { ut[i], ut[j] = ut[j], ut[i] }
-func (ut ByUpdateTime) Less(i, j int) bool { return ut[i].LastUpdate.Before(ut[j].LastUpdate) }
+func (ut ResourceByUpdateTime) Len() int           { return len(ut) }
+func (ut ResourceByUpdateTime) Swap(i, j int)      { ut[i], ut[j] = ut[j], ut[i] }
+func (ut ResourceByUpdateTime) Less(i, j int) bool { return ut[i].LastUpdate.Before(ut[j].LastUpdate) }
 
-type ByName []common.Resource
+type ResourceByName []common.Resource
 
-func (ut ByName) Len() int           { return len(ut) }
-func (ut ByName) Swap(i, j int)      { ut[i], ut[j] = ut[j], ut[i] }
-func (ut ByName) Less(i, j int) bool { return ut[i].Name < ut[j].Name }
+func (ut ResourceByName) Len() int           { return len(ut) }
+func (ut ResourceByName) Swap(i, j int)      { ut[i], ut[j] = ut[j], ut[i] }
+func (ut ResourceByName) Less(i, j int) bool { return ut[i].GetName() < ut[j].GetName() }
+
+type ConfigByName []common.ResourceConfig
+
+func (ut ConfigByName) Len() int           { return len(ut) }
+func (ut ConfigByName) Swap(i, j int)      { ut[i], ut[j] = ut[j], ut[i] }
+func (ut ConfigByName) Less(i, j int) bool { return ut[i].GetName() < ut[j].GetName() }
 
 // Public errors:
 
