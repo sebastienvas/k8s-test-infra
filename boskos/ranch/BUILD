@@ -23,6 +23,7 @@ go_library(
         "crd_storage.go",
         "memory_storage.go",
         "ranch.go",
+        "storage.go",
     ],
     importpath = "k8s.io/test-infra/boskos/ranch",
     deps = [

@@ -43,36 +43,30 @@ func main() {
 
 	config, scheme, err := crds.CreateRESTConfig(*kubeConfig)
 	if err != nil {
-		logrus.Fatal(err)
+		logrus.WithError(err).Fatal("failed to create REST config")
 	}
 
-	var storage ranch.StorageInterface
-	if *storagePath != "" {
-		s, err := ranch.NewInMemStorage(*storagePath)
-		if err != nil {
-			logrus.WithError(err).Fatalf("Failed to create ranch! Config: %v, kubeconfig : %v", *configPath, *kubeConfig)
-		}
-		storage = s
+	if err = crds.RegisterResources(config); err != nil {
+		logrus.WithError(err).Fatal("failed to register resources")
+	}
+	// creates the clientset
+	var restClient *rest.RESTClient
+	restClient, err = rest.RESTClientFor(config)
+	if err != nil {
+		logrus.WithError(err).Fatal("failed to create REST client")
+	}
+	rc := crds.NewCRDClient(restClient, scheme, *namespace, crds.ResourcePlural)
 
-	} else {
-		if err = crds.RegisterResources(config); err != nil {
-			logrus.Fatal(err)
-		}
-		// creates the clientset
-		var restClient *rest.RESTClient
-		restClient, err = rest.RESTClientFor(config)
-		if err != nil {
-			logrus.Fatal(err)
-		}
-		rc := crds.NewCRDClient(restClient, scheme, *namespace, crds.ResourcePlural)
-		cc := crds.NewCRDClient(restClient, scheme, *namespace, crds.ResourceConfigPlural)
-		s := ranch.NewCRDStorage(rc, cc)
-		storage = s
+	resourceStorage := ranch.NewCRDStorage(&rc)
+	configStorage := ranch.NewMemoryStorage()
+	storage, err := ranch.NewStorage(configStorage, resourceStorage, *storagePath)
+	if err != nil {
+		logrus.WithError(err).Fatal("failed to create storage")
 	}
 
 	r, err := ranch.NewRanch(*configPath, storage)
 	if err != nil {
-		logrus.WithError(err).Fatalf("Failed to create ranch! Config: %v, kubeconfig : %v", *configPath, *kubeConfig)
+		logrus.WithError(err).Fatalf("failed to create ranch! Config: %v, kubeconfig : %v", *configPath, *kubeConfig)
 	}
 
 	http.Handle("/", handleDefault(r))

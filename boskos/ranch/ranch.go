@@ -37,22 +37,9 @@ const (
 
 // Ranch is the place which all of the Resource objects lives.
 type Ranch struct {
-	Storage       StorageInterface
+	Storage       *Storage
 	resourcesLock sync.RWMutex
 	configsLock   sync.RWMutex
-}
-
-type StorageInterface interface {
-	AddResource(config common.Resource) error
-	DeleteResource(string) error
-	UpdateResource(common.Resource) error
-	GetResource(string) (common.Resource, error)
-	GetResources() ([]common.Resource, error)
-	AddConfig(common.ResourceConfig) error
-	DeleteConfig(string) error
-	UpdateConfig(common.ResourceConfig) error
-	GetConfig(string) (common.ResourceConfig, error)
-	GetConfigs() ([]common.ResourceConfig, error)
 }
 
 type ByUpdateTime []common.Resource
@@ -111,22 +98,16 @@ func (s StateNotMatch) Error() string {
 // In: config - path to resource file
 //     storage - path to where to save/restore the state data
 // Out: A Ranch object, loaded from config/storage, or error
-func NewRanch(config string, storage StorageInterface) (*Ranch, error) {
-
+func NewRanch(config string, s *Storage) (*Ranch, error) {
 	newRanch := &Ranch{
-		Storage:       storage,
-		configsLock:   sync.RWMutex{},
-		resourcesLock: sync.RWMutex{},
+		Storage: s,
 	}
-
 	if config != "" {
 		if err := newRanch.SyncConfig(config); err != nil {
 			return nil, err
 		}
 	}
-
 	newRanch.LogStatus()
-
 	return newRanch, nil
 }
 

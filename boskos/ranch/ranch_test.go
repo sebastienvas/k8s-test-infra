@@ -18,35 +18,27 @@ package ranch
 
 import (
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
 	"k8s.io/test-infra/boskos/common"
 	"k8s.io/test-infra/boskos/crds"
-	"sort"
 )
 
-func MakeTestRanches(resources []common.Resource, configs []common.ResourceConfig) []Ranch {
-	var ranches []Ranch
-	resourceClient := crds.NewCRDDummyClient(crds.ResourcePlural)
-	configClient := crds.NewCRDDummyClient(crds.ResourceConfigPlural)
-	cs := NewCRDStorage(resourceClient, configClient)
-	ms, _ := NewInMemStorage("")
-	storages := []StorageInterface{cs, ms}
-
-	for _, s := range storages {
-		for _, r := range resources {
-			s.AddResource(r)
-		}
-		for _, c := range configs {
-			s.AddConfig(c)
-		}
-		ranches = append(ranches, Ranch{
-			Storage: s,
-		})
+func MakeTestRanch(resources []common.Resource, configs []common.ResourceConfig) *Ranch {
+	cs := NewMemoryStorage()
+	//rs := NewMemoryStorage()
+	rs := NewCRDStorage(crds.NewCRDDummyClient(crds.ResourcePlural))
+	s, _ := NewStorage(cs, rs, "")
+	for _, res := range resources {
+		s.AddResource(res)
 	}
-
-	return ranches
+	for _, conf := range configs {
+		s.AddConfig(conf)
+	}
+	r, _ := NewRanch("", s)
+	return r
 }
 
 func AreErrorsEqual(got error, expect error) bool {
@@ -177,33 +169,32 @@ func TestAcquire(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		for _, c := range MakeTestRanches(tc.resources, []common.ResourceConfig{}) {
-			res, err := c.Acquire(tc.rtype, tc.state, tc.dest, tc.owner)
-			if !AreErrorsEqual(err, tc.expectErr) {
-				t.Errorf("%s - Got error %v, expect error %v", tc.name, err, tc.expectErr)
-				continue
-			}
+		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		res, err := c.Acquire(tc.rtype, tc.state, tc.dest, tc.owner)
+		if !AreErrorsEqual(err, tc.expectErr) {
+			t.Errorf("%s - Got error %v, expect error %v", tc.name, err, tc.expectErr)
+			continue
+		}
 
-			resources, err2 := c.Storage.GetResources()
-			if err2 != nil {
-				t.Errorf("failed to get resources")
-				continue
-			}
+		resources, err2 := c.Storage.GetResources()
+		if err2 != nil {
+			t.Errorf("failed to get resources")
+			continue
+		}
 
-			if err == nil {
-				if res.State != tc.dest {
-					t.Errorf("%s - Wrong final state. Got %v, expect %v", tc.name, res.State, tc.dest)
-				}
-				if !reflect.DeepEqual(*res, resources[0]) {
-					t.Errorf("%s - Wrong resource. Got %v, expect %v", tc.name, res, resources[0])
-				} else if !res.LastUpdate.After(FakeNow) {
-					t.Errorf("%s - LastUpdate did not update.", tc.name)
-				}
-			} else {
-				for _, res := range resources {
-					if res.LastUpdate != FakeNow {
-						t.Errorf("%s - LastUpdate should not update. Got %v, expect %v", tc.name, resources[0].LastUpdate, FakeNow)
-					}
+		if err == nil {
+			if res.State != tc.dest {
+				t.Errorf("%s - Wrong final state. Got %v, expect %v", tc.name, res.State, tc.dest)
+			}
+			if !reflect.DeepEqual(*res, resources[0]) {
+				t.Errorf("%s - Wrong resource. Got %v, expect %v", tc.name, res, resources[0])
+			} else if !res.LastUpdate.After(FakeNow) {
+				t.Errorf("%s - LastUpdate did not update.", tc.name)
+			}
+		} else {
+			for _, res := range resources {
+				if res.LastUpdate != FakeNow {
+					t.Errorf("%s - LastUpdate should not update. Got %v, expect %v", tc.name, resources[0].LastUpdate, FakeNow)
 				}
 			}
 		}
@@ -245,18 +236,17 @@ func TestAcquireRoundRobin(t *testing.T) {
 
 	results := map[string]int{}
 
-	for _, c := range MakeTestRanches(resources, []common.ResourceConfig{}) {
-		for i := 0; i < 4; i++ {
-			res, err := c.Acquire("t", "s", "d", "foo")
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-			_, found := results[res.Name]
-			if found {
-				t.Errorf("resource %s was used more than once", res.Name)
-			}
-			c.Release(res.Name, "s", "foo")
+	c := MakeTestRanch(resources, []common.ResourceConfig{})
+	for i := 0; i < 4; i++ {
+		res, err := c.Acquire("t", "s", "d", "foo")
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
 		}
+		_, found := results[res.Name]
+		if found {
+			t.Errorf("resource %s was used more than once", res.Name)
+		}
+		c.Release(res.Name, "s", "foo")
 	}
 }
 
@@ -330,30 +320,29 @@ func TestRelease(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		for _, c := range MakeTestRanches(tc.resources, []common.ResourceConfig{}) {
-			err := c.Release(tc.resName, tc.dest, tc.owner)
-			if !AreErrorsEqual(err, tc.expectErr) {
-				t.Errorf("%s - Got error %v, expect error %v", tc.name, err, tc.expectErr)
-				continue
+		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		err := c.Release(tc.resName, tc.dest, tc.owner)
+		if !AreErrorsEqual(err, tc.expectErr) {
+			t.Errorf("%s - Got error %v, expect error %v", tc.name, err, tc.expectErr)
+			continue
+		}
+		resources, err2 := c.Storage.GetResources()
+		if err2 != nil {
+			t.Errorf("failed to get resources")
+			continue
+		}
+		if err == nil {
+			if resources[0].Owner != "" {
+				t.Errorf("%s - Wrong owner after release. Got %v, expect empty", tc.name, resources[0].Owner)
+			} else if resources[0].State != tc.dest {
+				t.Errorf("%s - Wrong state after release. Got %v, expect %v", tc.name, resources[0].State, tc.dest)
+			} else if !resources[0].LastUpdate.After(FakeNow) {
+				t.Errorf("%s - LastUpdate did not update.", tc.name)
 			}
-			resources, err2 := c.Storage.GetResources()
-			if err2 != nil {
-				t.Errorf("failed to get resources")
-				continue
-			}
-			if err == nil {
-				if resources[0].Owner != "" {
-					t.Errorf("%s - Wrong owner after release. Got %v, expect empty", tc.name, resources[0].Owner)
-				} else if resources[0].State != tc.dest {
-					t.Errorf("%s - Wrong state after release. Got %v, expect %v", tc.name, resources[0].State, tc.dest)
-				} else if !resources[0].LastUpdate.After(FakeNow) {
-					t.Errorf("%s - LastUpdate did not update.", tc.name)
-				}
-			} else {
-				for _, res := range resources {
-					if res.LastUpdate != FakeNow {
-						t.Errorf("%s - LastUpdate should not update. Got %v, expect %v", tc.name, resources[0].LastUpdate, FakeNow)
-					}
+		} else {
+			for _, res := range resources {
+				if res.LastUpdate != FakeNow {
+					t.Errorf("%s - LastUpdate should not update. Got %v, expect %v", tc.name, resources[0].LastUpdate, FakeNow)
 				}
 			}
 		}
@@ -457,28 +446,27 @@ func TestReset(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		for _, c := range MakeTestRanches(tc.resources, []common.ResourceConfig{}) {
-			rmap, err := c.Reset(tc.rtype, tc.state, tc.expire, tc.dest)
-			if err != nil {
-				t.Errorf("failed to reset %v", err)
-			}
+		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		rmap, err := c.Reset(tc.rtype, tc.state, tc.expire, tc.dest)
+		if err != nil {
+			t.Errorf("failed to reset %v", err)
+		}
 
-			if !tc.hasContent {
-				if len(rmap) != 0 {
-					t.Errorf("%s - Expect empty map. Got %v", tc.name, rmap)
-				}
-			} else {
-				if owner, ok := rmap["res"]; !ok || owner != "user" {
-					t.Errorf("%s - Expect res - user. Got %v", tc.name, rmap)
-				}
-				resources, err := c.Storage.GetResources()
-				if err != nil {
-					t.Errorf("failed to get resources")
-					continue
-				}
-				if !resources[0].LastUpdate.After(FakeNow) {
-					t.Errorf("%s - LastUpdate did not update.", tc.name)
-				}
+		if !tc.hasContent {
+			if len(rmap) != 0 {
+				t.Errorf("%s - Expect empty map. Got %v", tc.name, rmap)
+			}
+		} else {
+			if owner, ok := rmap["res"]; !ok || owner != "user" {
+				t.Errorf("%s - Expect res - user. Got %v", tc.name, rmap)
+			}
+			resources, err := c.Storage.GetResources()
+			if err != nil {
+				t.Errorf("failed to get resources")
+				continue
+			}
+			if !resources[0].LastUpdate.After(FakeNow) {
+				t.Errorf("%s - LastUpdate did not update.", tc.name)
 			}
 		}
 	}
@@ -569,32 +557,31 @@ func TestUpdate(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		for _, c := range MakeTestRanches(tc.resources, []common.ResourceConfig{}) {
-			err := c.Update(tc.resName, tc.owner, tc.state, nil)
-			if !AreErrorsEqual(err, tc.expectErr) {
-				t.Errorf("%s - Got error %v, expect error %v", tc.name, err, tc.expectErr)
-				continue
-			}
+		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		err := c.Update(tc.resName, tc.owner, tc.state, nil)
+		if !AreErrorsEqual(err, tc.expectErr) {
+			t.Errorf("%s - Got error %v, expect error %v", tc.name, err, tc.expectErr)
+			continue
+		}
 
-			resources, err2 := c.Storage.GetResources()
-			if err2 != nil {
-				t.Errorf("failed to get resources")
-				continue
-			}
+		resources, err2 := c.Storage.GetResources()
+		if err2 != nil {
+			t.Errorf("failed to get resources")
+			continue
+		}
 
-			if err == nil {
-				if resources[0].Owner != tc.owner {
-					t.Errorf("%s - Wrong owner after release. Got %v, expect %v", tc.name, resources[0].Owner, tc.owner)
-				} else if resources[0].State != tc.state {
-					t.Errorf("%s - Wrong state after release. Got %v, expect %v", tc.name, resources[0].State, tc.state)
-				} else if !resources[0].LastUpdate.After(FakeNow) {
-					t.Errorf("%s - LastUpdate did not update.", tc.name)
-				}
-			} else {
-				for _, res := range resources {
-					if res.LastUpdate != FakeNow {
-						t.Errorf("%s - LastUpdate should not update. Got %v, expect %v", tc.name, resources[0].LastUpdate, FakeNow)
-					}
+		if err == nil {
+			if resources[0].Owner != tc.owner {
+				t.Errorf("%s - Wrong owner after release. Got %v, expect %v", tc.name, resources[0].Owner, tc.owner)
+			} else if resources[0].State != tc.state {
+				t.Errorf("%s - Wrong state after release. Got %v, expect %v", tc.name, resources[0].State, tc.state)
+			} else if !resources[0].LastUpdate.After(FakeNow) {
+				t.Errorf("%s - LastUpdate did not update.", tc.name)
+			}
+		} else {
+			for _, res := range resources {
+				if res.LastUpdate != FakeNow {
+					t.Errorf("%s - LastUpdate should not update. Got %v, expect %v", tc.name, resources[0].LastUpdate, FakeNow)
 				}
 			}
 		}
@@ -700,17 +687,16 @@ func TestMetric(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		for _, c := range MakeTestRanches(tc.resources, []common.ResourceConfig{}) {
-			metric, err := c.Metric(tc.metricType)
-			if !AreErrorsEqual(err, tc.expectErr) {
-				t.Errorf("%s - Got error %v, expect error %v", tc.name, err, tc.expectErr)
-				continue
-			}
+		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		metric, err := c.Metric(tc.metricType)
+		if !AreErrorsEqual(err, tc.expectErr) {
+			t.Errorf("%s - Got error %v, expect error %v", tc.name, err, tc.expectErr)
+			continue
+		}
 
-			if err == nil {
-				if !reflect.DeepEqual(metric, tc.expectMetric) {
-					t.Errorf("%s - wrong metric, got %v, want %v", tc.name, metric, tc.expectMetric)
-				}
+		if err == nil {
+			if !reflect.DeepEqual(metric, tc.expectMetric) {
+				t.Errorf("%s - wrong metric, got %v, want %v", tc.name, metric, tc.expectMetric)
 			}
 		}
 	}
@@ -879,19 +865,17 @@ func TestSyncConfig(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		for _, c := range MakeTestRanches(tc.oldRes, nil) {
-			c.syncResources(tc.newRes)
-			resources, err := c.Storage.GetResources()
-			if err != nil {
-				t.Errorf("failed to get resources")
-				continue
-			}
-			sort.Stable(ByName(resources))
-			sort.Stable(ByName(tc.expect))
-			if !reflect.DeepEqual(resources, tc.expect) {
-				t.Errorf("Test %v: got %v, expect %v", tc.name, resources, tc.expect)
-			}
+		c := MakeTestRanch(tc.oldRes, nil)
+		c.syncResources(tc.newRes)
+		resources, err := c.Storage.GetResources()
+		if err != nil {
+			t.Errorf("failed to get resources")
+			continue
 		}
-
+		sort.Stable(ByName(resources))
+		sort.Stable(ByName(tc.expect))
+		if !reflect.DeepEqual(resources, tc.expect) {
+			t.Errorf("Test %v: got %v, expect %v", tc.name, resources, tc.expect)
+		}
 	}
 }

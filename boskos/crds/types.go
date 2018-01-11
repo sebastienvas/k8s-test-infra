@@ -17,7 +17,6 @@ limitations under the License.
 package crds
 
 import (
-	"fmt"
 	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,6 +48,8 @@ var knownTypes = map[string]struct {
 type Object interface {
 	runtime.Object
 	GetName() string
+	FromItem(item common.Item)
+	ToItem() common.Item
 }
 
 type Collection interface {
@@ -147,6 +148,10 @@ func (in *Resource) ToResource() common.Resource {
 	}
 }
 
+func (in *Resource) ToItem() common.Item {
+	return in.ToResource()
+}
+
 func (in *Resource) FromResource(r common.Resource) {
 	in.Name = r.Name
 	in.Spec.Type = r.Type
@@ -155,6 +160,13 @@ func (in *Resource) FromResource(r common.Resource) {
 	in.Status.State = r.State
 	in.Status.LastUpdate = r.LastUpdate
 	in.Status.Info = r.Info
+}
+
+func (in *Resource) FromItem(i common.Item) {
+	r, err := common.ItemToResource(i)
+	if err == nil {
+		in.FromResource(r)
+	}
 }
 
 func (in *ResourceList) GetItems() []Object {
@@ -231,10 +243,21 @@ func (in *ResourceConfig) ToResourceConfig() common.ResourceConfig {
 	}
 }
 
-func (in *ResourceConfig) FromResource(r common.ResourceConfig) {
+func (in *ResourceConfig) ToItem() common.Item {
+	return in.ToResourceConfig()
+}
+
+func (in *ResourceConfig) FromResourceConfig(r common.ResourceConfig) {
 	in.ObjectMeta.Name = r.Name
 	in.Spec.Config = r.Config
 	in.Spec.Needs = r.Needs
+}
+
+func (in *ResourceConfig) FromItem(i common.Item) {
+	c, err := common.ItemToResourceConfig(i)
+	if err == nil {
+		in.FromResourceConfig(c)
+	}
 }
 
 func (in *ResourceConfigList) GetItems() []Object {
@@ -274,37 +297,4 @@ func (in *ResourceConfigList) DeepCopyObject() runtime.Object {
 		return c
 	}
 	return nil
-}
-
-func RuntimeObjectToResource(o runtime.Object) (*Resource, error) {
-	r, ok := o.(*Resource)
-	if !ok {
-		return nil, fmt.Errorf("cannot construct CRD Resource from received object %v", o)
-	}
-	return r, nil
-}
-
-func RuntimeObjectToResourceList(o runtime.Object) (*ResourceList, error) {
-	r, ok := o.(*ResourceList)
-	if !ok {
-		return nil, fmt.Errorf("cannot construct CRD ResourceList from received object %v", o)
-	}
-	return r, nil
-}
-
-func RuntimeObjectToResourceConfig(o runtime.Object) (*ResourceConfig, error) {
-	r, ok := o.(*ResourceConfig)
-	if !ok {
-		return nil, fmt.Errorf("cannot construct CRD ResourceCongfig from received object %v", o)
-	}
-	return r, nil
-}
-
-func RuntimeObjectToResourceConfigList(o runtime.Object) (*ResourceConfigList, error) {
-	r, ok := o.(*ResourceConfigList)
-	if !ok {
-		return nil, fmt.Errorf("cannot construct CRD ResourceCongfigList from received object %v", o)
-
-	}
-	return r, nil
 }

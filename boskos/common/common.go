@@ -41,6 +41,11 @@ type TypedContent struct {
 	Content string `json:"content,omitempty"`
 }
 
+// Item interfaces for resources and configs
+type Item interface {
+	GetName() string
+}
+
 type Resource struct {
 	Type       string    `json:"type"`
 	Name       string    `json:"name"`
@@ -102,3 +107,19 @@ func (r *ResTypes) Set(value string) error {
 
 func (res Resource) GetName() string        { return res.Name }
 func (conf ResourceConfig) GetName() string { return conf.Name }
+
+func ItemToResource(i interface{}) (Resource, error) {
+	res, ok := i.(Resource)
+	if !ok {
+		return Resource{}, fmt.Errorf("cannot construct Resource from received object %v", i)
+	}
+	return res, nil
+}
+
+func ItemToResourceConfig(i interface{}) (ResourceConfig, error) {
+	conf, ok := i.(ResourceConfig)
+	if !ok {
+		return ResourceConfig{}, fmt.Errorf("cannot construct Resource from received object %v", i)
+	}
+	return conf, nil
+}

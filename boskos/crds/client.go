@@ -108,25 +108,27 @@ func RegisterResources(config *rest.Config) error {
 	return nil
 }
 
-func NewCRDClient(cl *rest.RESTClient, scheme *runtime.Scheme, namespace, plural string) *CRDclient {
-	return &CRDclient{cl: cl, ns: namespace, plural: plural,
+func NewCRDClient(cl *rest.RESTClient, scheme *runtime.Scheme, namespace, plural string) CRDclient {
+	return CRDclient{cl: cl, ns: namespace, plural: plural,
 		codec: runtime.NewParameterCodec(scheme)}
 }
 
 func NewCRDDummyClient(plural string) *CRDDummyClient {
-	c := CRDDummyClient{
+	c := &CRDDummyClient{
 		plural:  plural,
-		objects: map[string]Object{},
+		objects: make(map[string]Object),
 	}
-	return &c
+	return c
 }
 
 type CRDClientInterface interface {
-	Create(obj Object) (runtime.Object, error)
-	Update(obj Object) (runtime.Object, error)
+	NewObject() Object
+	NewCollection() Collection
+	Create(obj Object) (Object, error)
+	Update(obj Object) (Object, error)
 	Delete(name string, options *v1.DeleteOptions) error
-	Get(name string) (runtime.Object, error)
-	List(opts v1.ListOptions) (runtime.Object, error)
+	Get(name string) (Object, error)
+	List(opts v1.ListOptions) (Collection, error)
 }
 
 type CRDDummyClient struct {
@@ -134,12 +136,20 @@ type CRDDummyClient struct {
 	plural  string
 }
 
-func (c *CRDDummyClient) Create(obj Object) (runtime.Object, error) {
+func (c *CRDDummyClient) NewObject() Object {
+	return knownTypes[c.plural].object.DeepCopyObject().(Object)
+}
+
+func (c *CRDDummyClient) NewCollection() Collection {
+	return knownTypes[c.plural].collection.DeepCopyObject().(Collection)
+}
+
+func (c *CRDDummyClient) Create(obj Object) (Object, error) {
 	c.objects[obj.GetName()] = obj
 	return obj, nil
 }
 
-func (c *CRDDummyClient) Update(obj Object) (runtime.Object, error) {
+func (c *CRDDummyClient) Update(obj Object) (Object, error) {
 	c.objects[obj.GetName()] = obj
 	return obj, nil
 }
@@ -153,7 +163,7 @@ func (c *CRDDummyClient) Delete(name string, options *v1.DeleteOptions) error {
 	return fmt.Errorf("%s does not exist", name)
 }
 
-func (c *CRDDummyClient) Get(name string) (runtime.Object, error) {
+func (c *CRDDummyClient) Get(name string) (Object, error) {
 	obj, ok := c.objects[name]
 	if ok {
 		return obj, nil
@@ -161,12 +171,12 @@ func (c *CRDDummyClient) Get(name string) (runtime.Object, error) {
 	return nil, fmt.Errorf("could not find %s", name)
 }
 
-func (c *CRDDummyClient) List(opts v1.ListOptions) (runtime.Object, error) {
+func (c *CRDDummyClient) List(opts v1.ListOptions) (Collection, error) {
 	var items []Object
 	for _, i := range c.objects {
 		items = append(items, i)
 	}
-	r := knownTypes[c.plural].collection
+	r := c.NewCollection()
 	r.SetItems(items)
 	return r, nil
 }
@@ -178,8 +188,16 @@ type CRDclient struct {
 	codec  runtime.ParameterCodec
 }
 
-func (c *CRDclient) Create(obj Object) (runtime.Object, error) {
-	result := knownTypes[c.plural].object.DeepCopyObject()
+func (c *CRDclient) NewObject() Object {
+	return knownTypes[c.plural].object.DeepCopyObject().(Object)
+}
+
+func (c *CRDclient) NewCollection() Collection {
+	return knownTypes[c.plural].collection.DeepCopyObject().(Collection)
+}
+
+func (c *CRDclient) Create(obj Object) (Object, error) {
+	result := c.NewObject()
 	err := c.cl.Post().
 		Namespace(c.ns).
 		Resource(c.plural).
@@ -190,8 +208,8 @@ func (c *CRDclient) Create(obj Object) (runtime.Object, error) {
 	return result, err
 }
 
-func (c *CRDclient) Update(obj Object) (runtime.Object, error) {
-	result := knownTypes[c.plural].object.DeepCopyObject()
+func (c *CRDclient) Update(obj Object) (Object, error) {
+	result := c.NewObject()
 	err := c.cl.Put().
 		Namespace(c.ns).
 		Resource(c.plural).
@@ -212,8 +230,8 @@ func (c *CRDclient) Delete(name string, options *v1.DeleteOptions) error {
 		Error()
 }
 
-func (c *CRDclient) Get(name string) (runtime.Object, error) {
-	result := knownTypes[c.plural].object.DeepCopyObject()
+func (c *CRDclient) Get(name string) (Object, error) {
+	result := c.NewObject()
 	err := c.cl.Get().
 		Namespace(c.ns).
 		Resource(c.plural).
@@ -223,8 +241,8 @@ func (c *CRDclient) Get(name string) (runtime.Object, error) {
 	return result, err
 }
 
-func (c *CRDclient) List(opts v1.ListOptions) (runtime.Object, error) {
-	result := knownTypes[c.plural].collection.DeepCopyObject()
+func (c *CRDclient) List(opts v1.ListOptions) (Collection, error) {
+	result := c.NewCollection()
 	err := c.cl.Get().
 		Namespace(c.ns).
 		Resource(c.plural).

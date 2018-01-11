@@ -31,25 +31,17 @@ import (
 	"k8s.io/test-infra/boskos/ranch"
 )
 
-func MakeTestRanches(resources []common.Resource, configs []common.ResourceConfig) []ranch.Ranch {
-	var ranches []ranch.Ranch
+func MakeTestRanch(resources []common.Resource, configs []common.ResourceConfig) ranch.Ranch {
 	resourceClient := crds.NewCRDDummyClient(crds.ResourcePlural)
-	configClient := crds.NewCRDDummyClient(crds.ResourceConfigPlural)
-	cs := ranch.NewCRDStorage(resourceClient, configClient)
-	ms, _ := ranch.NewInMemStorage("")
-	for _, s := range []ranch.StorageInterface{cs, ms} {
-		for _, r := range resources {
-			s.AddResource(r)
-		}
-		for _, c := range configs {
-			s.AddConfig(c)
-		}
-		ranches = append(ranches, ranch.Ranch{
-			Storage: s,
-		})
+	s, _ := ranch.NewStorage(ranch.NewMemoryStorage(), ranch.NewCRDStorage(resourceClient), "")
+	for _, r := range resources {
+		s.AddResource(r)
 	}
-
-	return ranches
+	for _, c := range configs {
+		s.AddConfig(c)
+	}
+	r, _ := ranch.NewRanch("", s)
+	return *r
 }
 
 func TestAcquire(t *testing.T) {
@@ -168,42 +160,41 @@ func TestAcquire(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		for _, c := range MakeTestRanches(tc.resources, []common.ResourceConfig{}) {
-			handler := handleAcquire(&c)
-			req, err := http.NewRequest(tc.method, "", nil)
+		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		handler := handleAcquire(&c)
+		req, err := http.NewRequest(tc.method, "", nil)
+		if err != nil {
+			t.Fatalf("Error making request: %v", err)
+		}
+		u, err := url.Parse(tc.path)
+		if err != nil {
+			t.Fatalf("Error parsing URL: %v", err)
+		}
+		req.URL = u
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != tc.code {
+			t.Errorf("%s - Wrong error code. Got %v, expect %v", tc.name, rr.Code, tc.code)
+		}
+
+		if rr.Code == http.StatusOK {
+			var data common.Resource
+			json.Unmarshal(rr.Body.Bytes(), &data)
+			if data.Name != "res" {
+				t.Errorf("%s - Got res %v, expect res", tc.name, data.Name)
+			}
+
+			if data.State != "d" {
+				t.Errorf("%s - Got state %v, expect d", tc.name, data.State)
+			}
+
+			resources, err := c.Storage.GetResources()
 			if err != nil {
-				t.Fatalf("Error making request: %v", err)
+				t.Error("cannot get resources")
+				continue
 			}
-			u, err := url.Parse(tc.path)
-			if err != nil {
-				t.Fatalf("Error parsing URL: %v", err)
-			}
-			req.URL = u
-			rr := httptest.NewRecorder()
-			handler.ServeHTTP(rr, req)
-			if rr.Code != tc.code {
-				t.Errorf("%s - Wrong error code. Got %v, expect %v", tc.name, rr.Code, tc.code)
-			}
-
-			if rr.Code == http.StatusOK {
-				var data common.Resource
-				json.Unmarshal(rr.Body.Bytes(), &data)
-				if data.Name != "res" {
-					t.Errorf("%s - Got res %v, expect res", tc.name, data.Name)
-				}
-
-				if data.State != "d" {
-					t.Errorf("%s - Got state %v, expect d", tc.name, data.State)
-				}
-
-				resources, err := c.Storage.GetResources()
-				if err != nil {
-					t.Error("cannot get resources")
-					continue
-				}
-				if resources[0].Owner != "o" {
-					t.Errorf("%s - Wrong owner. Got %v, expect o", tc.name, resources[0].Owner)
-				}
+			if resources[0].Owner != "o" {
+				t.Errorf("%s - Wrong owner. Got %v, expect o", tc.name, resources[0].Owner)
 			}
 		}
 	}
@@ -304,36 +295,35 @@ func TestRelease(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		for _, c := range MakeTestRanches(tc.resources, []common.ResourceConfig{}) {
-			handler := handleRelease(&c)
-			req, err := http.NewRequest(tc.method, "", nil)
+		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		handler := handleRelease(&c)
+		req, err := http.NewRequest(tc.method, "", nil)
+		if err != nil {
+			t.Fatalf("Error making request: %v", err)
+		}
+		u, err := url.Parse(tc.path)
+		if err != nil {
+			t.Fatalf("Error parsing URL: %v", err)
+		}
+		req.URL = u
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != tc.code {
+			t.Errorf("%s - Wrong error code. Got %v, expect %v", tc.name, rr.Code, tc.code)
+		}
+
+		if rr.Code == http.StatusOK {
+			resources, err := c.Storage.GetResources()
 			if err != nil {
-				t.Fatalf("Error making request: %v", err)
+				t.Error("cannot get resources")
+				continue
 			}
-			u, err := url.Parse(tc.path)
-			if err != nil {
-				t.Fatalf("Error parsing URL: %v", err)
-			}
-			req.URL = u
-			rr := httptest.NewRecorder()
-			handler.ServeHTTP(rr, req)
-			if rr.Code != tc.code {
-				t.Errorf("%s - Wrong error code. Got %v, expect %v", tc.name, rr.Code, tc.code)
+			if resources[0].State != "d" {
+				t.Errorf("%s - Wrong state. Got %v, expect d", tc.name, resources[0].State)
 			}
 
-			if rr.Code == http.StatusOK {
-				resources, err := c.Storage.GetResources()
-				if err != nil {
-					t.Error("cannot get resources")
-					continue
-				}
-				if resources[0].State != "d" {
-					t.Errorf("%s - Wrong state. Got %v, expect d", tc.name, resources[0].State)
-				}
-
-				if resources[0].Owner != "" {
-					t.Errorf("%s - Wrong owner. Got %v, expect empty", tc.name, resources[0].Owner)
-				}
+			if resources[0].Owner != "" {
+				t.Errorf("%s - Wrong owner. Got %v, expect empty", tc.name, resources[0].Owner)
 			}
 		}
 	}
@@ -476,35 +466,33 @@ func TestReset(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		for _, c := range MakeTestRanches(tc.resources, []common.ResourceConfig{}) {
+		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		handler := handleReset(&c)
+		req, err := http.NewRequest(tc.method, "", nil)
+		if err != nil {
+			t.Fatalf("Error making request: %v", err)
+		}
+		u, err := url.Parse(tc.path)
+		if err != nil {
+			t.Fatalf("Error parsing URL: %v", err)
+		}
+		req.URL = u
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != tc.code {
+			t.Errorf("%s - Wrong error code. Got %v, expect %v", tc.name, rr.Code, tc.code)
+		}
 
-			handler := handleReset(&c)
-			req, err := http.NewRequest(tc.method, "", nil)
-			if err != nil {
-				t.Fatalf("Error making request: %v", err)
-			}
-			u, err := url.Parse(tc.path)
-			if err != nil {
-				t.Fatalf("Error parsing URL: %v", err)
-			}
-			req.URL = u
-			rr := httptest.NewRecorder()
-			handler.ServeHTTP(rr, req)
-			if rr.Code != tc.code {
-				t.Errorf("%s - Wrong error code. Got %v, expect %v", tc.name, rr.Code, tc.code)
-			}
-
-			if rr.Code == http.StatusOK {
-				rmap := make(map[string]string)
-				json.Unmarshal(rr.Body.Bytes(), &rmap)
-				if !tc.hasContent {
-					if len(rmap) != 0 {
-						t.Errorf("%s - Expect empty map. Got %v", tc.name, rmap)
-					}
-				} else {
-					if owner, ok := rmap["res"]; !ok || owner != "user" {
-						t.Errorf("%s - Expect res - user. Got %v", tc.name, rmap)
-					}
+		if rr.Code == http.StatusOK {
+			rmap := make(map[string]string)
+			json.Unmarshal(rr.Body.Bytes(), &rmap)
+			if !tc.hasContent {
+				if len(rmap) != 0 {
+					t.Errorf("%s - Expect empty map. Got %v", tc.name, rmap)
+				}
+			} else {
+				if owner, ok := rmap["res"]; !ok || owner != "user" {
+					t.Errorf("%s - Expect res - user. Got %v", tc.name, rmap)
 				}
 			}
 		}
@@ -623,32 +611,31 @@ func TestUpdate(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		for _, c := range MakeTestRanches(tc.resources, []common.ResourceConfig{}) {
-			handler := handleUpdate(&c)
-			req, err := http.NewRequest(tc.method, "", nil)
-			if err != nil {
-				t.Fatalf("Error making request: %v", err)
-			}
-			u, err := url.Parse(tc.path)
-			if err != nil {
-				t.Fatalf("Error parsing URL: %v", err)
-			}
-			req.URL = u
-			rr := httptest.NewRecorder()
-			handler.ServeHTTP(rr, req)
-			if rr.Code != tc.code {
-				t.Errorf("%s - Wrong error code. Got %v, expect %v", tc.name, rr.Code, tc.code)
-			}
+		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		handler := handleUpdate(&c)
+		req, err := http.NewRequest(tc.method, "", nil)
+		if err != nil {
+			t.Fatalf("Error making request: %v", err)
+		}
+		u, err := url.Parse(tc.path)
+		if err != nil {
+			t.Fatalf("Error parsing URL: %v", err)
+		}
+		req.URL = u
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != tc.code {
+			t.Errorf("%s - Wrong error code. Got %v, expect %v", tc.name, rr.Code, tc.code)
+		}
 
-			if rr.Code == http.StatusOK {
-				resources, err := c.Storage.GetResources()
-				if err != nil {
-					t.Error("cannot get resources")
-					continue
-				}
-				if resources[0].LastUpdate == FakeNow {
-					t.Errorf("%s - Timestamp is not updated!", tc.name)
-				}
+		if rr.Code == http.StatusOK {
+			resources, err := c.Storage.GetResources()
+			if err != nil {
+				t.Error("cannot get resources")
+				continue
+			}
+			if resources[0].LastUpdate == FakeNow {
+				t.Errorf("%s - Timestamp is not updated!", tc.name)
 			}
 		}
 	}
@@ -724,32 +711,30 @@ func TestGetMetric(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		for _, c := range MakeTestRanches(tc.resources, []common.ResourceConfig{}) {
+		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		handler := handleMetric(&c)
+		req, err := http.NewRequest(tc.method, "", nil)
+		if err != nil {
+			t.Fatalf("Error making request: %v", err)
+		}
+		u, err := url.Parse(tc.path)
+		if err != nil {
+			t.Fatalf("Error parsing URL: %v", err)
+		}
+		req.URL = u
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != tc.code {
+			t.Errorf("%s - Wrong error code. Got %v, expect %v", tc.name, rr.Code, tc.code)
+		}
 
-			handler := handleMetric(&c)
-			req, err := http.NewRequest(tc.method, "", nil)
-			if err != nil {
-				t.Fatalf("Error making request: %v", err)
+		if rr.Code == http.StatusOK {
+			var metric common.Metric
+			if err := json.Unmarshal(rr.Body.Bytes(), &metric); err != nil {
+				t.Errorf("%s - Fail to unmarshal body - %s", tc.name, err)
 			}
-			u, err := url.Parse(tc.path)
-			if err != nil {
-				t.Fatalf("Error parsing URL: %v", err)
-			}
-			req.URL = u
-			rr := httptest.NewRecorder()
-			handler.ServeHTTP(rr, req)
-			if rr.Code != tc.code {
-				t.Errorf("%s - Wrong error code. Got %v, expect %v", tc.name, rr.Code, tc.code)
-			}
-
-			if rr.Code == http.StatusOK {
-				var metric common.Metric
-				if err := json.Unmarshal(rr.Body.Bytes(), &metric); err != nil {
-					t.Errorf("%s - Fail to unmarshal body - %s", tc.name, err)
-				}
-				if !reflect.DeepEqual(metric, tc.expect) {
-					t.Errorf("%s - wrong metric, got %v, want %v", tc.name, metric, tc.expect)
-				}
+			if !reflect.DeepEqual(metric, tc.expect) {
+				t.Errorf("%s - wrong metric, got %v, want %v", tc.name, metric, tc.expect)
 			}
 		}
 	}
