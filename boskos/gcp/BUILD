@@ -10,6 +10,7 @@ go_library(
         "//boskos/mason:go_default_library",
         "//vendor/github.com/sirupsen/logrus:go_default_library",
         "//vendor/golang.org/x/oauth2/google:go_default_library",
+        "//vendor/golang.org/x/oauth2/jwt:go_default_library",
         "//vendor/google.golang.org/api/compute/v1:go_default_library",
         "//vendor/google.golang.org/api/container/v1:go_default_library",
         "//vendor/gopkg.in/yaml.v2:go_default_library",
