@@ -34,7 +34,9 @@ func main() {
 	mason := mason.NewMasonFromFlags()
 
 	// Registering Config Converters
-	mason.RegisterConfigConverter(gcp.ResourceConfigType, gcp.ConfigConverter)
+	if err := mason.RegisterConfigConverter(gcp.ResourceConfigType, gcp.ConfigConverter); err != nil {
+		logrus.WithError(err).Fatal("unable tp register config converter")
+	}
 	logrus.Info("Initialized boskos client!")
 
 	mason.Start()

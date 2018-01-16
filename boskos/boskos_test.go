@@ -31,7 +31,7 @@ import (
 	"k8s.io/test-infra/boskos/ranch"
 )
 
-func MakeTestRanch(resources []common.Resource, configs []common.ResourceConfig) ranch.Ranch {
+func MakeTestRanch(resources []common.Resource, configs []common.ResourceConfig) *ranch.Ranch {
 	resourceClient := crds.NewCRDDummyClient(crds.ResourcePlural)
 	s, _ := ranch.NewStorage(ranch.NewMemoryStorage(), ranch.NewCRDStorage(resourceClient), "")
 	for _, r := range resources {
@@ -41,7 +41,7 @@ func MakeTestRanch(resources []common.Resource, configs []common.ResourceConfig)
 		s.AddConfig(c)
 	}
 	r, _ := ranch.NewRanch("", s)
-	return *r
+	return r
 }
 
 func TestAcquire(t *testing.T) {
@@ -161,7 +161,7 @@ func TestAcquire(t *testing.T) {
 
 	for _, tc := range testcases {
 		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
-		handler := handleAcquire(&c)
+		handler := handleAcquire(c)
 		req, err := http.NewRequest(tc.method, "", nil)
 		if err != nil {
 			t.Fatalf("Error making request: %v", err)
@@ -296,7 +296,7 @@ func TestRelease(t *testing.T) {
 
 	for _, tc := range testcases {
 		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
-		handler := handleRelease(&c)
+		handler := handleRelease(c)
 		req, err := http.NewRequest(tc.method, "", nil)
 		if err != nil {
 			t.Fatalf("Error making request: %v", err)
@@ -467,7 +467,7 @@ func TestReset(t *testing.T) {
 
 	for _, tc := range testcases {
 		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
-		handler := handleReset(&c)
+		handler := handleReset(c)
 		req, err := http.NewRequest(tc.method, "", nil)
 		if err != nil {
 			t.Fatalf("Error making request: %v", err)
@@ -612,7 +612,7 @@ func TestUpdate(t *testing.T) {
 
 	for _, tc := range testcases {
 		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
-		handler := handleUpdate(&c)
+		handler := handleUpdate(c)
 		req, err := http.NewRequest(tc.method, "", nil)
 		if err != nil {
 			t.Fatalf("Error making request: %v", err)
@@ -712,7 +712,7 @@ func TestGetMetric(t *testing.T) {
 
 	for _, tc := range testcases {
 		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
-		handler := handleMetric(&c)
+		handler := handleMetric(c)
 		req, err := http.NewRequest(tc.method, "", nil)
 		if err != nil {
 			t.Fatalf("Error making request: %v", err)

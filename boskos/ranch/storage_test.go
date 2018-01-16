@@ -36,6 +36,7 @@ func createStorages() []StorageInterface {
 func TestAddDelete(t *testing.T) {
 	for _, s := range createStorages() {
 		var resources []common.Resource
+		var err error
 		for i := 0; i < 10; i++ {
 			resources = append(resources, common.Resource{
 				Name: fmt.Sprintf("res_%d", i),
@@ -44,7 +45,7 @@ func TestAddDelete(t *testing.T) {
 		}
 		sort.Stable(ResourceByName(resources))
 		for _, res := range resources {
-			if err := s.Add(res); err != nil {
+			if err = s.Add(res); err != nil {
 				t.Errorf("unable to add %s", res.Name)
 			}
 		}
@@ -54,7 +55,8 @@ func TestAddDelete(t *testing.T) {
 		}
 		var rResources []common.Resource
 		for _, i := range items {
-			r, err := common.ItemToResource(i)
+			var r common.Resource
+			r, err = common.ItemToResource(i)
 			if err != nil {
 				t.Error("unable to convert resource")
 			}
@@ -65,7 +67,7 @@ func TestAddDelete(t *testing.T) {
 			t.Errorf("received resources (%v) do not match resources (%v)", resources, rResources)
 		}
 		for _, i := range items {
-			err := s.Delete(i.GetName())
+			err = s.Delete(i.GetName())
 			if err != nil {
 				t.Error("unable ")
 			}

@@ -35,6 +35,7 @@ import (
 	"google.golang.org/api/container/v1"
 
 	"golang.org/x/oauth2/google"
+	"golang.org/x/oauth2/jwt"
 )
 
 var (
@@ -74,7 +75,7 @@ type ResourceConfig struct {
 }
 
 type InstanceInfo struct {
-	Name string `json:"name`
+	Name string `json:"name"`
 }
 
 type ProjectInfo struct {
@@ -87,7 +88,7 @@ type ResourceInfo struct {
 	ProjectsInfo []ProjectInfo `json:"projectsinfo,omitempty"`
 }
 
-type GCPClient struct {
+type client struct {
 	gkeService *container.Service
 	gceService *compute.Service
 }
@@ -95,8 +96,9 @@ type GCPClient struct {
 func (rc *ResourceConfig) Construct(res *common.Resource, types common.TypeToResources) (*common.TypedContent, error) {
 	typedContent := common.TypedContent{Type: ResourceConfigType}
 	info := ResourceInfo{}
+	var err error
 
-	gcpClient, err := newGCPClient()
+	gcpClient, err := newClient()
 	if err != nil {
 		return nil, err
 	}
@@ -107,14 +109,16 @@ func (rc *ResourceConfig) Construct(res *common.Resource, types common.TypeToRes
 		project, types[pc.Type] = types[pc.Type][0], types[pc.Type][1:]
 		projectInfo := ProjectInfo{Name: project.Name}
 		for _, cl := range pc.Clusters {
-			clusterInfo, err := gcpClient.createCluster(project.Name, cl)
+			var clusterInfo *InstanceInfo
+			clusterInfo, err = gcpClient.createCluster(project.Name, cl)
 			if err != nil {
 				return nil, err
 			}
 			projectInfo.Clusters = append(projectInfo.Clusters, *clusterInfo)
 		}
 		for _, vm := range pc.Vms {
-			vmInfo, err := gcpClient.createVM(project.Name, vm)
+			var vmInfo *InstanceInfo
+			vmInfo, err = gcpClient.createVM(project.Name, vm)
 			if err != nil {
 				return nil, err
 			}
@@ -152,17 +156,19 @@ func (ri *ResourceInfo) ToString() (string, error) {
 	return string(out), nil
 }
 
-func newGCPClient() (*GCPClient, error) {
+func newClient() (*client, error) {
 	var (
 		oauthClient *http.Client
 		err         error
 	)
 	if *serviceAccount != "" {
-		data, err := ioutil.ReadFile(*serviceAccount)
+		var data []byte
+		data, err = ioutil.ReadFile(*serviceAccount)
 		if err != nil {
 			return nil, err
 		}
-		conf, err := google.JWTConfigFromJSON(data, compute.CloudPlatformScope)
+		var conf *jwt.Config
+		conf, err = google.JWTConfigFromJSON(data, compute.CloudPlatformScope)
 		if err != nil {
 			return nil, err
 		}
@@ -181,7 +187,7 @@ func newGCPClient() (*GCPClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &GCPClient{
+	return &client{
 		gceService: gceService,
 		gkeService: gkeService,
 	}, nil
@@ -200,7 +206,7 @@ func generateName(prefix string) string {
 	return fmt.Sprintf("%s_%s", prefix, time.Now().Format("0102150405"))
 }
 
-func (cc *GCPClient) checkGKEOperation(project, zone, id string) error {
+func (cc *client) checkGKEOperation(project, zone, id string) error {
 	newOp, err := cc.gkeService.Projects.Zones.Operations.Get(project, zone, id).Do()
 	if err != nil {
 		return err
@@ -208,15 +214,14 @@ func (cc *GCPClient) checkGKEOperation(project, zone, id string) error {
 	if newOp.Status == done {
 		if newOp.StatusMessage == "" {
 			return nil
-		} else {
-			return fmt.Errorf(newOp.StatusMessage)
 		}
+		return fmt.Errorf(newOp.StatusMessage)
 	}
 	time.Sleep(10 * time.Second)
 	return cc.checkGKEOperation(project, zone, id)
 }
 
-func (cc *GCPClient) checkGCEOperation(project, zone, id string) error {
+func (cc *client) checkGCEOperation(project, zone, id string) error {
 	newOp, err := cc.gceService.ZoneOperations.Get(project, zone, id).Do()
 	if err != nil {
 		return err
@@ -224,15 +229,14 @@ func (cc *GCPClient) checkGCEOperation(project, zone, id string) error {
 	if newOp.Status == done {
 		if newOp.StatusMessage == "" {
 			return nil
-		} else {
-			return fmt.Errorf(newOp.StatusMessage)
 		}
+		return fmt.Errorf(newOp.StatusMessage)
 	}
 	time.Sleep(10 * time.Second)
 	return cc.checkGKEOperation(project, zone, id)
 }
 
-func (cc *GCPClient) createCluster(project string, config GKEClusterConfig) (*InstanceInfo, error) {
+func (cc *client) createCluster(project string, config GKEClusterConfig) (*InstanceInfo, error) {
 	var version string
 	name := generateName("gke")
 	serverConfig, err := cc.gkeService.Projects.Zones.GetServerconfig(project, config.Zone).Do()
@@ -268,7 +272,7 @@ func (cc *GCPClient) createCluster(project string, config GKEClusterConfig) (*In
 	return &InstanceInfo{Name: name}, nil
 }
 
-func DefaultComputeInstance(config GCEVMConfig, project, name string) *compute.Instance {
+func newComputeInstance(config GCEVMConfig, project, name string) *compute.Instance {
 	// Inconsistency between compute and container APIs
 	machineType := fmt.Sprintf("projects/%s/zones/%s/machineTypes/%s", project, config.Zone, config.MachineType)
 	instance := &compute.Instance{
@@ -311,9 +315,9 @@ func DefaultComputeInstance(config GCEVMConfig, project, name string) *compute.I
 	return instance
 }
 
-func (cc *GCPClient) createVM(project string, config GCEVMConfig) (*InstanceInfo, error) {
+func (cc *client) createVM(project string, config GCEVMConfig) (*InstanceInfo, error) {
 	name := generateName("gce")
-	instance := DefaultComputeInstance(config, project, name)
+	instance := newComputeInstance(config, project, name)
 	call := cc.gceService.Instances.Insert(project, config.Zone, instance)
 	op, err := call.Do()
 	if err != nil {

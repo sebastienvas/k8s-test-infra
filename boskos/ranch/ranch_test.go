@@ -891,7 +891,7 @@ func fakeConfig(name, cType, content string, needs int) common.ResourceConfig {
 		},
 	}
 	for i := 0; i < needs; i++ {
-		c.Needs[fmt.Sprintf("type_%s", i)] = i
+		c.Needs[fmt.Sprintf("type_%d", i)] = i
 	}
 	return c
 }
