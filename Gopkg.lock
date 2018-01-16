@@ -7,6 +7,12 @@
   revision = "'75cd24fc2f2c2a2088577d12123ddee5f54e0675'"
 
 [[projects]]
+  name = "cloud.google.com/go"
+  packages = ["compute/metadata"]
+  revision = "050b16d2314d5fc3d4c9a51e4cd5c7468e77f162"
+  version = "v0.17.0"
+
+[[projects]]
   name = "github.com/NYTimes/gziphandler"
   packages = ["."]
   revision = "63027b26b87e2ae2ce3810393d4b81021cfd3a35"
@@ -381,6 +387,7 @@
   name = "golang.org/x/net"
   packages = [
     "context",
+    "context/ctxhttp",
     "http2",
     "http2/hpack",
     "idna",
@@ -392,7 +399,10 @@
   name = "golang.org/x/oauth2"
   packages = [
     ".",
-    "internal"
+    "google",
+    "internal",
+    "jws",
+    "jwt"
   ]
   revision = "3c3a985cb79f52a3190fbc056984415ca6763d01"
 
@@ -425,6 +435,18 @@
     "go/gcimporter15"
   ]
   revision = "1f0f7f68c993a0ff4e0fe1793c08cdd14cc243cb"
+
+[[projects]]
+  branch = "master"
+  name = "google.golang.org/api"
+  packages = [
+    "compute/v1",
+    "container/v1",
+    "gensupport",
+    "googleapi",
+    "googleapi/internal/uritemplates"
+  ]
+  revision = "ff5d3c38820f8fd8bd04f917bc656d894edf390d"
 
 [[projects]]
   name = "google.golang.org/appengine"
@@ -591,6 +613,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "f2a0095135bb7e21653d355f60fad79165b043f2224d25c12f42f15865fea205"
+  inputs-digest = "ca480d7e507fe69bfb36b22a7dd2bb8ce7f0bc8d372b77c5c57576c6869b0365"
   solver-name = "gps-cdcl"
   solver-version = 1
