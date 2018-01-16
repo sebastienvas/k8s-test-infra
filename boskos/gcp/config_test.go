@@ -39,8 +39,15 @@ func TestParseConfig(t *testing.T) {
 				Vms: []GCEVMConfig{
 					{
 						MachineType: "n1-standard-4",
-						Image:       "debian-9-drawfork",
+						SourceImage: "projects/debian-cloud/global/images/debian-9-stretch-v20180105",
 						Zone:        "us-central-1f",
+						Tags: []string{
+							"http-server",
+							"https-server",
+						},
+						Scopes: []string{
+							"https://www.googleapis.com/auth/cloud-platform",
+						},
 					},
 				},
 			},

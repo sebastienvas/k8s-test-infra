@@ -46,7 +46,7 @@ func init() {
 
 // Config should be implemented by all configurations
 type Config interface {
-	Construct(*common.Resource, common.TypeToResources) (*common.ResourceInfo, error)
+	Construct(*common.Resource, common.TypeToResources) (*common.TypedContent, error)
 }
 
 type ConfigConverter func(string) (Config, error)
@@ -140,7 +140,6 @@ func (m *Mason) cleanAll() {
 		}
 		time.Sleep(m.sleepTime)
 	}
-
 }
 
 func (m *Mason) cleanOne(res *common.Resource, leasedResources common.TypeToResources) error {
@@ -154,12 +153,18 @@ func (m *Mason) cleanOne(res *common.Resource, leasedResources common.TypeToReso
 		logrus.WithError(err).Errorf("failed to convert config type %s - \n%s", configEntry.Config.Type, configEntry.Config.Content)
 		return err
 	}
-	info, err := config.Construct(res, leasedResources)
+	res.Info = common.ResourceInfo{}
+	for _, lr := range leasedResources {
+		for _, r := range lr {
+			res.Info.LeasedResources = append(res.Info.LeasedResources, r.Name)
+		}
+	}
+	typedContent, err := config.Construct(res, leasedResources)
 	if err != nil {
 		logrus.WithError(err).Errorf("failed to construct resource %s", res.Name)
 		return err
 	}
-	res.Info = *info
+	res.Info.Info = *typedContent
 	logrus.Infof("Resource %s is cleaned", res.Name)
 	return nil
 }

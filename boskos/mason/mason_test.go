@@ -50,19 +50,10 @@ func fakeConfigConverter(in string) (Config, error) {
 	return &fakeConfig{}, nil
 }
 
-func (fc *fakeConfig) Construct(res *common.Resource, typeToRes common.TypeToResources) (*common.ResourceInfo, error) {
-	var leasedResources []string
-	for _, resources := range typeToRes {
-		for _, r := range resources {
-			leasedResources = append(leasedResources, r.Name)
-		}
-	}
-	return &common.ResourceInfo{
-		LeasedResources: leasedResources,
-		Info: common.TypedContent{
-			Type:    fakeInfoType,
-			Content: emptyContent,
-		},
+func (fc *fakeConfig) Construct(res *common.Resource, typeToRes common.TypeToResources) (*common.TypedContent, error) {
+	return &common.TypedContent{
+		Type:    fakeInfoType,
+		Content: emptyContent,
 	}, nil
 }
 

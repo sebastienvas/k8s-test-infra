@@ -29,5 +29,11 @@ configs:
           zone: us-central-1f
         vms:
         - machinetype: n1-standard-4
-          image: debian-9-drawfork
+          sourceimage: projects/debian-cloud/global/images/debian-9-stretch-v20180105
           zone: us-central-1f
+          tags:
+          - http-server
+          - https-server
+          scopes:
+          - https://www.googleapis.com/auth/cloud-platform
+
