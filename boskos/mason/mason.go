@@ -31,7 +31,6 @@ const (
 	Cleaning         = "cleaning"
 	Leased           = "leased"
 	Owner            = "Mason"
-	URL              = "http://boskos"
 	DefaultSleepTime = time.Minute
 )
 
@@ -88,7 +87,7 @@ func (r Requirement) IsFulFilled() bool {
 }
 
 func NewMasonFromFlags() *Mason {
-	boskos := client.NewClient(Owner, URL)
+	boskos := client.NewClient(Owner, *client.BoskosUrl)
 	logrus.Info("Initialized boskos client!")
 	return NewMason(rTypes, *channelBufferSize, boskos, DefaultSleepTime)
 }

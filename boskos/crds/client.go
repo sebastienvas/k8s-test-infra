@@ -17,6 +17,7 @@ limitations under the License.
 package crds
 
 import (
+	"flag"
 	"fmt"
 
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
@@ -33,6 +34,11 @@ import (
 const (
 	Group   = "boskos.k8s.io"
 	Version = "v1"
+)
+
+var (
+	kubeConfig = flag.String("kubeconfig", "", "absolute path to the kubeConfig file")
+	namespace  = flag.String("namespace", v1.NamespaceDefault, "namespace to install on")
 )
 
 // CreateRESTConfig for cluster API server, pass empty config file for in-cluster
@@ -71,57 +77,70 @@ func CreateRESTConfig(kubeconfig string) (config *rest.Config, types *runtime.Sc
 	return
 }
 
-// RegisterResources sends a request to create CRDs and waits for them to initialize
-func RegisterResources(config *rest.Config) error {
+// RegisterResource sends a request to create CRDs and waits for them to initialize
+func RegisterResource(config *rest.Config, kind, plural string) error {
 	c, err := apiextensionsclient.NewForConfig(config)
 	if err != nil {
 		return err
 	}
 
-	for _, s := range []struct{ p, k string }{
-		{
-			p: ResourcePlural,
-			k: ResourceKind,
+	crd := &apiextensionsv1beta1.CustomResourceDefinition{
+		ObjectMeta: v1.ObjectMeta{
+			Name: fmt.Sprintf("%s.%s", plural, Group),
 		},
-		{
-			p: ResourceConfigPlural,
-			k: ResourceConfigKind,
-		}} {
-		crd := &apiextensionsv1beta1.CustomResourceDefinition{
-			ObjectMeta: v1.ObjectMeta{
-				Name: fmt.Sprintf("%s.%s", s.p, Group),
+		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
+			Group:   Group,
+			Version: Version,
+			Scope:   apiextensionsv1beta1.NamespaceScoped,
+			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
+				Plural: plural,
+				Kind:   kind,
 			},
-			Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
-				Group:   Group,
-				Version: Version,
-				Scope:   apiextensionsv1beta1.NamespaceScoped,
-				Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
-					Plural: s.p,
-					Kind:   s.k,
-				},
-			},
-		}
-		if _, err := c.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd); err != nil && !apierrors.IsAlreadyExists(err) {
-			return err
-		}
+		},
+	}
+	if _, err := c.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd); err != nil && !apierrors.IsAlreadyExists(err) {
+		return err
 	}
 	return nil
 }
 
-func NewCRDClient(cl *rest.RESTClient, scheme *runtime.Scheme, namespace, plural string) CRDclient {
-	return CRDclient{cl: cl, ns: namespace, plural: plural,
+func NewClient(cl *rest.RESTClient, scheme *runtime.Scheme, namespace, plural string) Client {
+	return Client{cl: cl, ns: namespace, plural: plural,
 		codec: runtime.NewParameterCodec(scheme)}
 }
 
-func NewCRDDummyClient(plural string) *CRDDummyClient {
-	c := &CRDDummyClient{
+func NewDummyClient(plural string) *DummyClient {
+	c := &DummyClient{
 		plural:  plural,
 		objects: make(map[string]Object),
 	}
 	return c
 }
 
-type CRDClientInterface interface {
+func NewResourceClient() (*Client, error) {
+	return NewClientFromFlag(ResourceKind, ResourcePlural)
+}
+
+func NewClientFromFlag(kind, plural string) (*Client, error) {
+	config, scheme, err := CreateRESTConfig(*kubeConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = RegisterResource(config, kind, plural); err != nil {
+		return nil, err
+	}
+	// creates the client
+	var restClient *rest.RESTClient
+	restClient, err = rest.RESTClientFor(config)
+	if err != nil {
+		return nil, err
+	}
+	rc := NewClient(restClient, scheme, *namespace, plural)
+	return &rc, nil
+}
+
+type ClientInterface interface {
 	NewObject() Object
 	NewCollection() Collection
 	Create(obj Object) (Object, error)
@@ -131,25 +150,25 @@ type CRDClientInterface interface {
 	List(opts v1.ListOptions) (Collection, error)
 }
 
-type CRDDummyClient struct {
+type DummyClient struct {
 	objects map[string]Object
 	plural  string
 }
 
-func (c *CRDDummyClient) NewObject() Object {
+func (c *DummyClient) NewObject() Object {
 	return knownTypes[c.plural].object.DeepCopyObject().(Object)
 }
 
-func (c *CRDDummyClient) NewCollection() Collection {
+func (c *DummyClient) NewCollection() Collection {
 	return knownTypes[c.plural].collection.DeepCopyObject().(Collection)
 }
 
-func (c *CRDDummyClient) Create(obj Object) (Object, error) {
+func (c *DummyClient) Create(obj Object) (Object, error) {
 	c.objects[obj.GetName()] = obj
 	return obj, nil
 }
 
-func (c *CRDDummyClient) Update(obj Object) (Object, error) {
+func (c *DummyClient) Update(obj Object) (Object, error) {
 	_, ok := c.objects[obj.GetName()]
 	if !ok {
 		return nil, fmt.Errorf("cannot find object %s", obj.GetName())
@@ -158,7 +177,7 @@ func (c *CRDDummyClient) Update(obj Object) (Object, error) {
 	return obj, nil
 }
 
-func (c *CRDDummyClient) Delete(name string, options *v1.DeleteOptions) error {
+func (c *DummyClient) Delete(name string, options *v1.DeleteOptions) error {
 	_, ok := c.objects[name]
 	if ok {
 		delete(c.objects, name)
@@ -167,7 +186,7 @@ func (c *CRDDummyClient) Delete(name string, options *v1.DeleteOptions) error {
 	return fmt.Errorf("%s does not exist", name)
 }
 
-func (c *CRDDummyClient) Get(name string) (Object, error) {
+func (c *DummyClient) Get(name string) (Object, error) {
 	obj, ok := c.objects[name]
 	if ok {
 		return obj, nil
@@ -175,7 +194,7 @@ func (c *CRDDummyClient) Get(name string) (Object, error) {
 	return nil, fmt.Errorf("could not find %s", name)
 }
 
-func (c *CRDDummyClient) List(opts v1.ListOptions) (Collection, error) {
+func (c *DummyClient) List(opts v1.ListOptions) (Collection, error) {
 	var items []Object
 	for _, i := range c.objects {
 		items = append(items, i)
@@ -185,22 +204,22 @@ func (c *CRDDummyClient) List(opts v1.ListOptions) (Collection, error) {
 	return r, nil
 }
 
-type CRDclient struct {
+type Client struct {
 	cl     *rest.RESTClient
 	ns     string
 	plural string
 	codec  runtime.ParameterCodec
 }
 
-func (c *CRDclient) NewObject() Object {
+func (c *Client) NewObject() Object {
 	return knownTypes[c.plural].object.DeepCopyObject().(Object)
 }
 
-func (c *CRDclient) NewCollection() Collection {
+func (c *Client) NewCollection() Collection {
 	return knownTypes[c.plural].collection.DeepCopyObject().(Collection)
 }
 
-func (c *CRDclient) Create(obj Object) (Object, error) {
+func (c *Client) Create(obj Object) (Object, error) {
 	result := c.NewObject()
 	err := c.cl.Post().
 		Namespace(c.ns).
@@ -212,7 +231,7 @@ func (c *CRDclient) Create(obj Object) (Object, error) {
 	return result, err
 }
 
-func (c *CRDclient) Update(obj Object) (Object, error) {
+func (c *Client) Update(obj Object) (Object, error) {
 	result := c.NewObject()
 	err := c.cl.Put().
 		Namespace(c.ns).
@@ -224,7 +243,7 @@ func (c *CRDclient) Update(obj Object) (Object, error) {
 	return result, err
 }
 
-func (c *CRDclient) Delete(name string, options *v1.DeleteOptions) error {
+func (c *Client) Delete(name string, options *v1.DeleteOptions) error {
 	return c.cl.Delete().
 		Namespace(c.ns).
 		Resource(c.plural).
@@ -234,7 +253,7 @@ func (c *CRDclient) Delete(name string, options *v1.DeleteOptions) error {
 		Error()
 }
 
-func (c *CRDclient) Get(name string) (Object, error) {
+func (c *Client) Get(name string) (Object, error) {
 	result := c.NewObject()
 	err := c.cl.Get().
 		Namespace(c.ns).
@@ -245,7 +264,7 @@ func (c *CRDclient) Get(name string) (Object, error) {
 	return result, err
 }
 
-func (c *CRDclient) List(opts v1.ListOptions) (Collection, error) {
+func (c *Client) List(opts v1.ListOptions) (Collection, error) {
 	result := c.NewCollection()
 	err := c.cl.Get().
 		Namespace(c.ns).

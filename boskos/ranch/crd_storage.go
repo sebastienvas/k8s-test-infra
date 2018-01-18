@@ -23,10 +23,10 @@ import (
 )
 
 type CRDStorage struct {
-	client crds.CRDClientInterface
+	client crds.ClientInterface
 }
 
-func NewCRDStorage(client crds.CRDClientInterface) *CRDStorage {
+func NewCRDStorage(client crds.ClientInterface) *CRDStorage {
 	return &CRDStorage{
 		client: client,
 	}
@@ -44,9 +44,12 @@ func (cs *CRDStorage) Delete(name string) error {
 }
 
 func (cs *CRDStorage) Update(i common.Item) error {
-	o := cs.client.NewObject()
+	o, err := cs.client.Get(i.GetName())
+	if err != nil {
+		return err
+	}
 	o.FromItem(i)
-	_, err := cs.client.Update(o)
+	_, err = cs.client.Update(o)
 	return err
 }
 

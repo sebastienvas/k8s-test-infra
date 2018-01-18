@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/deckarep/golang-set"
@@ -28,7 +29,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 	"k8s.io/test-infra/boskos/common"
-	"sync"
 )
 
 const (

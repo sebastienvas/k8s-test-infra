@@ -16,6 +16,7 @@ PROJECT ?= k8s-prow-builds
 ZONE ?= us-central1-f
 CLUSTER ?= prow
 NAMESPACE ?= test-pods
+HUB ?= gcr.io/k8s-testimages
 
 TAG = $(shell date +v%Y%m%d)-$(shell git describe --tags --always --dirty)
 
@@ -31,31 +32,40 @@ reaper:
 janitor:
 	go build -o janitor/janitor k8s.io/test-infra/boskos/janitor/
 
+mason:
+	go build -o cmd/mason k8s.io/test-infra/boskos/cmd/mason/
+
 metrics:
 	go build -o metrics/metrics k8s.io/test-infra/boskos/metrics/
 
 server-image:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o boskos k8s.io/test-infra/boskos/
-	docker build -t "gcr.io/k8s-testimages/boskos:$(TAG)" .
-	gcloud docker -- push "gcr.io/k8s-testimages/boskos:$(TAG)"
+	docker build -t "$(HUB)/boskos:$(TAG)" .
+	gcloud docker -- push "$(HUB)/boskos:$(TAG)"
 	rm boskos
 
 reaper-image:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o reaper/reaper k8s.io/test-infra/boskos/reaper/
-	docker build -t "gcr.io/k8s-testimages/reaper:$(TAG)" reaper
-	gcloud docker -- push "gcr.io/k8s-testimages/reaper:$(TAG)"
+	docker build -t "$(HUB)/reaper:$(TAG)" reaper
+	gcloud docker -- push "$(HUB)/reaper:$(TAG)"
 	rm reaper/reaper
 
 janitor-image:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o janitor/janitor k8s.io/test-infra/boskos/janitor/
-	docker build --no-cache -t "gcr.io/k8s-testimages/janitor:$(TAG)" janitor
-	gcloud docker -- push "gcr.io/k8s-testimages/janitor:$(TAG)"
+	docker build --no-cache -t "$(HUB)/janitor:$(TAG)" janitor
+	gcloud docker -- push "$(HUB)/janitor:$(TAG)"
 	rm janitor/janitor
+
+mason-image:
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o cmd/mason/mason k8s.io/test-infra/boskos/cmd/mason/
+	docker build --no-cache -t "$(HUB)/mason:$(TAG)" cmd/mason
+	gcloud docker -- push "$(HUB)/mason:$(TAG)"
+	rm cmd/mason/mason
 
 metrics-image:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o metrics/metrics k8s.io/test-infra/boskos/metrics/
-	docker build -t "gcr.io/k8s-testimages/metrics:$(TAG)" metrics
-	gcloud docker -- push "gcr.io/k8s-testimages/metrics:$(TAG)"
+	docker build -t "$(HUB)/metrics:$(TAG)" metrics
+	gcloud docker -- push "$(HUB)/metrics:$(TAG)"
 	rm metrics/metrics
 
 server-deployment:
@@ -66,6 +76,9 @@ reaper-deployment:
 
 janitor-deployment:
 	kubectl apply -f janitor/deployment.yaml
+
+mason-deployment:
+	kubectl apply -f cmd/mason/deployment.yaml
 
 metrics-deployment:
 	kubectl apply -f metrics/deployment.yaml

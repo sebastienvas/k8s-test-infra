@@ -24,40 +24,26 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"k8s.io/test-infra/boskos/common"
 	"k8s.io/test-infra/boskos/crds"
 	"k8s.io/test-infra/boskos/ranch"
-
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/rest"
-	"k8s.io/test-infra/boskos/common"
 )
 
-var configPath = flag.String("config", "config.yaml", "Path to init resource file")
-var kubeConfig = flag.String("kubeconfig", "", "absolute path to the kubeConfig file")
-var namespace = flag.String("namespace", v1.NamespaceDefault, "namespace to install on")
-var storagePath = flag.String("storage", "", "Path to persistent volume to load the state")
+var (
+	configPath  = flag.String("config", "config.yaml", "Path to init resource file")
+	storagePath = flag.String("storage", "", "Path to persistent volume to load the state")
+)
 
 func main() {
 	flag.Parse()
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 
-	config, scheme, err := crds.CreateRESTConfig(*kubeConfig)
+	rc, err := crds.NewResourceClient()
 	if err != nil {
-		logrus.WithError(err).Fatal("failed to create REST config")
+		logrus.WithError(err).Fatal("unable to create a CRD client")
 	}
 
-	if err = crds.RegisterResources(config); err != nil {
-		logrus.WithError(err).Fatal("failed to register resources")
-	}
-	// creates the clientset
-	var restClient *rest.RESTClient
-	restClient, err = rest.RESTClientFor(config)
-	if err != nil {
-		logrus.WithError(err).Fatal("failed to create REST client")
-	}
-	rc := crds.NewCRDClient(restClient, scheme, *namespace, crds.ResourcePlural)
-
-	resourceStorage := ranch.NewCRDStorage(&rc)
+	resourceStorage := ranch.NewCRDStorage(rc)
 	configStorage := ranch.NewMemoryStorage()
 	storage, err := ranch.NewStorage(configStorage, resourceStorage, *storagePath)
 	if err != nil {
@@ -66,7 +52,7 @@ func main() {
 
 	r, err := ranch.NewRanch(*configPath, storage)
 	if err != nil {
-		logrus.WithError(err).Fatalf("failed to create ranch! Config: %v, kubeconfig : %v", *configPath, *kubeConfig)
+		logrus.WithError(err).Fatalf("failed to create ranch! Config: %v", *configPath)
 	}
 
 	http.Handle("/", handleDefault(r))

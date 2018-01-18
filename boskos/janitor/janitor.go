@@ -30,10 +30,9 @@ import (
 var (
 	bufferSize     = 1 // Maximum holding resources
 	serviceAccount = flag.String("service-account", "", "Path to projects service account")
+	rTypes         common.ResTypes
+	poolSize       int
 )
-
-var rTypes common.ResTypes
-var poolSize int
 
 func init() {
 	flag.Var(&rTypes, "resource-type", "comma-separated list of resources need to be cleaned up")
@@ -41,12 +40,13 @@ func init() {
 }
 
 func main() {
-	logrus.SetFormatter(&logrus.JSONFormatter{})
-	boskos := client.NewClient("Janitor", "http://boskos")
-	logrus.Info("Initialized boskos client!")
-
 	// Activate service account
 	flag.Parse()
+
+	logrus.SetFormatter(&logrus.JSONFormatter{})
+	boskos := client.NewClient("Janitor", *client.BoskosUrl)
+	logrus.Info("Initialized boskos client!")
+
 	if *serviceAccount == "" {
 		logrus.Fatal("--service-account cannot be empty!")
 	}

@@ -30,7 +30,7 @@ import (
 func MakeTestRanch(resources []common.Resource, configs []common.ResourceConfig) *Ranch {
 	cs := NewMemoryStorage()
 	//rs := NewMemoryStorage()
-	rs := NewCRDStorage(crds.NewCRDDummyClient(crds.ResourcePlural))
+	rs := NewCRDStorage(crds.NewDummyClient(crds.ResourcePlural))
 	s, _ := NewStorage(cs, rs, "")
 	for _, res := range resources {
 		s.AddResource(res)

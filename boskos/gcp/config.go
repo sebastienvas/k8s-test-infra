@@ -50,10 +50,11 @@ const (
 )
 
 type GKEClusterConfig struct {
-	MachineType string `json:"machinetype,omitempty"`
-	NumNodes    int64  `json:"numnodes,omitempty"`
-	Version     string `json:"version,omitempty"`
-	Zone        string `json:"zone,ompitempty"`
+	MachineType           string `json:"machinetype,omitempty"`
+	NumNodes              int64  `json:"numnodes,omitempty"`
+	Version               string `json:"version,omitempty"`
+	Zone                  string `json:"zone,ompitempty"`
+	EnableKubernetesAlpha bool   `json:"enablekubernetesalpha"`
 }
 
 type GCEVMConfig struct {
@@ -259,6 +260,7 @@ func (cc *client) createCluster(project string, config GKEClusterConfig) (*Insta
 			NodeConfig: &container.NodeConfig{
 				MachineType: config.MachineType,
 			},
+			EnableKubernetesAlpha: config.EnableKubernetesAlpha,
 		},
 	}
 

@@ -19,6 +19,7 @@ package client
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -26,6 +27,10 @@ import (
 	"time"
 
 	"k8s.io/test-infra/boskos/common"
+)
+
+var (
+	BoskosUrl = flag.String("boskos-url", "http://boskos", "Boskos URL")
 )
 
 // Public Boskos client object
