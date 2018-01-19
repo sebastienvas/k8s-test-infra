@@ -32,6 +32,7 @@ var (
 	serviceAccount = flag.String("service-account", "", "Path to projects service account")
 	rTypes         common.ResTypes
 	poolSize       int
+	janitorPath    = flag.String("janitor-path", "/bin/janitor.py", "Path to janitor binary path")
 )
 
 func init() {
@@ -55,7 +56,7 @@ func main() {
 		logrus.Fatal("--resource-type must not be empty!")
 	}
 
-	cmd := exec.Command("gcloud", "auth", "activate-service-account", "--key-file="+*serviceAccount)
+	cmd := exec.Command("gcloud", "auth", "activate-service-account", "--key-file=" + *serviceAccount)
 	if b, err := cmd.CombinedOutput(); err != nil {
 		logrus.WithError(err).Fatalf("fail to activate service account from %s :%s", *serviceAccount, string(b))
 	}
@@ -72,7 +73,7 @@ type clean func(string) error
 
 // Clean by janitor script
 func janitorClean(proj string) error {
-	cmd := exec.Command("/bin/janitor.py", fmt.Sprintf("--project=%s", proj), "--hour=0")
+	cmd := exec.Command(*janitorPath, fmt.Sprintf("--project=%s", proj), "--hour=0")
 	err := cmd.Run()
 	if err != nil {
 		logrus.WithError(err).Errorf("failed to clean up project %s", proj)
@@ -108,10 +109,13 @@ func run(c boskosClient, buffer chan string, rtypes []string) int {
 				logrus.WithError(err).Error("boskos acquire failed!")
 				totalAcquire += res[r]
 				delete(res, r)
-			} else if projRes.Name == "" {
+			} else if projRes == nil {
+				// To Sen: I don t understand why this would happen
+				logrus.Warning("received nil resource")
 				totalAcquire += res[r]
 				delete(res, r)
 			} else {
+				logrus.Infof("Acquired resources %s of type %s", projRes.Name, projRes.Type)
 				buffer <- projRes.Name // will block until buffer has a free slot
 				res[r]++
 			}

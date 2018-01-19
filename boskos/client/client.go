@@ -196,16 +196,18 @@ func (c *Client) acquire(rtype string, state string, dest string) (*common.Resou
 			return nil, err
 		}
 
-		var res = new(common.Resource)
+		res := common.Resource{}
 		err = json.Unmarshal(body, &res)
 		if err != nil {
 			return nil, err
 		}
-		return res, nil
+		if res.Name == "" {
+			return nil, fmt.Errorf("unable to parse resource")
+		}
+		return &res, nil
 	} else if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
+		return nil, fmt.Errorf("resource not found")
 	}
-
 	return nil, fmt.Errorf("status %s, status code %v", resp.Status, resp.StatusCode)
 }
 
