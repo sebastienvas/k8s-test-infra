@@ -608,6 +608,21 @@ func TestUpdate(t *testing.T) {
 			code:   http.StatusOK,
 			method: http.MethodPost,
 		},
+		{
+			name: "ok",
+			resources: []common.Resource{
+				{
+					Name:       "res",
+					Type:       "t",
+					State:      "s",
+					Owner:      "merlin",
+					LastUpdate: FakeNow,
+				},
+			},
+			path:   "?name=res&state=s&owner=merlin",
+			code:   http.StatusOK,
+			method: http.MethodPost,
+		},
 	}
 
 	for _, tc := range testcases {
@@ -622,6 +637,7 @@ func TestUpdate(t *testing.T) {
 			t.Fatalf("Error parsing URL: %v", err)
 		}
 		req.URL = u
+		//req.Body =
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
 		if rr.Code != tc.code {

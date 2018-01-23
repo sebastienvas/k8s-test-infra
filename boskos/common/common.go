@@ -31,6 +31,7 @@ const (
 // ResourceNeeds maps the type to count of resources types needed
 type ResourceNeeds map[string]int
 
+
 // TypeToResources stores all the leased resources with the same type f
 type TypeToResources map[string][]*Resource
 
@@ -55,7 +56,7 @@ type Resource struct {
 	// Tell whether to use a config or not
 	UseConfig bool `json:"useconfig,omitempty"`
 	// Information on how to use the resource
-	Info ResourceInfo `json:"info,omitempty"`
+	UserData ResourceInfo `json:"info,omitempty"`
 }
 
 type ResourceInfo struct {

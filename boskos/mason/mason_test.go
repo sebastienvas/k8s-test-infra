@@ -126,7 +126,7 @@ func (fb *fakeBoskos) UpdateOne(name, state string, info *common.ResourceInfo) e
 	if ok {
 		res.State = state
 		if info != nil {
-			res.Info = *info
+			res.UserData = *info
 		}
 		return nil
 	}
@@ -159,7 +159,7 @@ func TestRecycleLeasedResources(t *testing.T) {
 
 	bclient := createFakeBoskos(tc)
 	bclient.resources["type1_0"].State = Leased
-	bclient.resources["type2_0"].Info = common.ResourceInfo{
+	bclient.resources["type2_0"].UserData = common.ResourceInfo{
 		LeasedResources: []string{"type1_0"},
 	}
 	m := NewMason(masonTypes, 1, bclient, time.Millisecond)

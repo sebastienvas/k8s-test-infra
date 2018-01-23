@@ -31,7 +31,7 @@ const (
 	Cleaning         = "cleaning"
 	Leased           = "leased"
 	Owner            = "Mason"
-	DefaultSleepTime = time.Minute
+	DefaultSleepTime = 10 * time.Second
 )
 
 var (
@@ -65,6 +65,7 @@ type Mason struct {
 	wg                          sync.WaitGroup
 	quit                        chan bool
 	configConverters            map[string]ConfigConverter
+	shutdown bool
 }
 
 type Requirement struct {
@@ -152,18 +153,12 @@ func (m *Mason) cleanOne(res *common.Resource, leasedResources common.TypeToReso
 		logrus.WithError(err).Errorf("failed to convert config type %s - \n%s", configEntry.Config.Type, configEntry.Config.Content)
 		return err
 	}
-	res.Info = common.ResourceInfo{}
-	for _, lr := range leasedResources {
-		for _, r := range lr {
-			res.Info.LeasedResources = append(res.Info.LeasedResources, r.Name)
-		}
-	}
 	typedContent, err := config.Construct(res, leasedResources)
 	if err != nil {
 		logrus.WithError(err).Errorf("failed to construct resource %s", res.Name)
 		return err
 	}
-	res.Info.Info = *typedContent
+	res.UserData.Info = *typedContent
 	logrus.Infof("Resource %s is cleaned", res.Name)
 	return nil
 }
@@ -182,8 +177,8 @@ func (m *Mason) freeAll() {
 }
 
 func (m *Mason) freeOne(res *common.Resource) error {
-	// Update Resource with Leased Resource and Info
-	if err := m.client.UpdateOne(res.Name, res.State, &res.Info); err != nil {
+	// Update Resource with Leased Resource and UserData
+	if err := m.client.UpdateOne(res.Name, res.State, &res.UserData); err != nil {
 		logrus.WithError(err).Errorf("failed to update resource %s", res.Name)
 		return err
 	}
@@ -214,10 +209,10 @@ func (m *Mason) recycleAll() {
 					logrus.Fatal("nil resource was returned")
 				} else {
 					if req, err := m.recycleOne(res); err != nil {
-						logrus.WithError(err).Error("")
+						logrus.WithError(err).Errorf("unable to recycle resource %s", res.Name)
 						err := m.client.ReleaseOne(res.Name, common.Dirty)
 						if err != nil {
-							logrus.WithError(err).Errorf("Unable to release resource %s", err)
+							logrus.WithError(err).Errorf("Unable to release resource %s", res.Name)
 						}
 					} else {
 						m.pending <- *req
@@ -236,13 +231,16 @@ func (m *Mason) recycleOne(res *common.Resource) (*Requirement, error) {
 	}
 
 	// Releasing leased resources
-	for _, l := range res.Info.LeasedResources {
+	for _, l := range res.UserData.LeasedResources {
 		if err := m.client.ReleaseOne(l, common.Dirty); err != nil {
 			logrus.WithError(err).Errorf("could not release resource %s", l)
 			return nil, err
 		}
 	}
-	res.Info = common.ResourceInfo{}
+	if err := m.client.UpdateOne(res.Name, res.State, nil); err != nil {
+		logrus.WithError(err).Errorf("could not update resource %s with freed leased resources", )
+	}
+	res.UserData = common.ResourceInfo{}
 	logrus.Infof("Resource %s is being recycled", res.Name)
 	return &Requirement{
 		fulfillment: common.TypeToResources{},
@@ -268,6 +266,10 @@ func (m *Mason) fulfillAll() {
 				}
 			}
 		} else {
+			m.client.UpdateOne(req.resource.Name, req.resource.State, &req.resource.UserData)
+			if err != nil {
+				logrus.WithError(err).Errorf("Unable to release resource %s", req.resource.Name)
+			}
 			m.fulfilled <- req
 		}
 		time.Sleep(m.sleepTime)
@@ -278,20 +280,32 @@ func (m *Mason) fulfillOne(req *Requirement) error {
 	// Making a copy
 	needs := req.needs
 	for rType := range needs {
-		if req.IsFulFilled() {
-			logrus.Infof("Requirement for release %s is fulfilled", req.resource.Name)
-			return nil
+		for needs[rType] > 0 {
+			if m.shutdown {
+				return fmt.Errorf("shutting down")
+			}
+			if req.IsFulFilled() {
+				info := common.ResourceInfo{}
+				for _, lr := range req.fulfillment {
+					for _, r := range lr {
+						info.LeasedResources = append(info.LeasedResources, r.Name)
+					}
+				}
+				req.resource.UserData = info
+				logrus.Infof("Requirement for release %s is fulfilled", req.resource.Name)
+				return nil
+			}
+			if needs[rType] <= 0 {
+				continue
+			}
+			if res, err := m.client.Acquire(rType, common.Free, Leased); err != nil {
+				logrus.WithError(err).Debug("boskos acquire failed!")
+			} else {
+				req.fulfillment[rType] = append(req.fulfillment[rType], res)
+				needs[rType]--
+			}
+			time.Sleep(m.sleepTime)
 		}
-		if needs[rType] <= 0 {
-			continue
-		}
-		if res, err := m.client.Acquire(rType, common.Free, Leased); err != nil {
-			logrus.WithError(err).Debug("boskos acquire failed!")
-		} else {
-			req.fulfillment[rType] = append(req.fulfillment[rType], res)
-			needs[rType]--
-		}
-		time.Sleep(m.sleepTime)
 	}
 	return nil
 }
@@ -311,6 +325,7 @@ func (m *Mason) Start() {
 
 func (m *Mason) Stop() {
 	logrus.Info("Stopping Mason")
+	m.shutdown = true
 	m.quit <- true
 	m.wg.Wait()
 	logrus.Info("Mason stopped")

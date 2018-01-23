@@ -55,13 +55,10 @@ func main() {
 		logrus.WithError(err).Fatalf("failed to create ranch! Config: %v", *configPath)
 	}
 
-	http.Handle("/", handleDefault(r))
-	http.Handle("/acquire", handleAcquire(r))
-	http.Handle("/release", handleRelease(r))
-	http.Handle("/reset", handleReset(r))
-	http.Handle("/update", handleUpdate(r))
-	http.Handle("/metric", handleMetric(r))
-	http.Handle("/getconfig", handleGetConfig(r))
+	boskos := http.Server{
+		Handler: NewBoskosHandler(r),
+		Addr: ":8080",
+	}
 
 	go func() {
 		logTick := time.NewTicker(time.Minute).C
@@ -77,8 +74,21 @@ func main() {
 	}()
 
 	logrus.Info("Start Service")
-	logrus.WithError(http.ListenAndServe(":8080", nil)).Fatal("ListenAndServe returned.")
+	logrus.WithError(boskos.ListenAndServe()).Fatal("ListenAndServe returned.")
 }
+
+func NewBoskosHandler(r *ranch.Ranch) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle("/", handleDefault(r))
+	mux.Handle("/acquire", handleAcquire(r))
+	mux.Handle("/release", handleRelease(r))
+	mux.Handle("/reset", handleReset(r))
+	mux.Handle("/update", handleUpdate(r))
+	mux.Handle("/metric", handleMetric(r))
+	mux.Handle("/getconfig", handleGetConfig(r))
+	return mux
+}
+
 
 // ErrorToStatus translates error into http code
 func ErrorToStatus(err error) int {
@@ -315,8 +325,7 @@ func handleUpdate(r *ranch.Ranch) http.HandlerFunc {
 		var info *common.ResourceInfo
 		if req.Body != nil {
 			defer req.Body.Close()
-			decoder := json.NewDecoder(req.Body)
-			if err := decoder.Decode(info); err != nil {
+			if err := json.NewDecoder(req.Body).Decode(&info); err != nil {
 				msg := fmt.Sprintf("Unable to parse Body %s", req.Body)
 				logrus.Warning(msg)
 				http.Error(res, msg, http.StatusBadRequest)
@@ -337,7 +346,7 @@ func handleUpdate(r *ranch.Ranch) http.HandlerFunc {
 			return
 		}
 
-		logrus.Info("Updated resource %v", name)
+		logrus.Infof("Updated resource %v", name)
 	}
 }
 

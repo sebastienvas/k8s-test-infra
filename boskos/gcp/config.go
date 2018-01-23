@@ -103,16 +103,36 @@ func (rc *ResourceConfig) Construct(res *common.Resource, types common.TypeToRes
 	if err != nil {
 		return nil, err
 	}
+	// Copy
+	typesCopy := types
+
+	popProject := func(rType string)  (*common.Resource) {
+		var r *common.Resource
+		if len(typesCopy[rType]) >= 1 {
+			r = typesCopy[rType][0]
+		}
+		if len(typesCopy[rType]) >= 2 {
+			typesCopy[rType] = typesCopy[rType][1:]
+		} else {
+			typesCopy[rType] = nil
+		}
+		return r
+	}
 
 	// Here we know that resources are of project type
 	for _, pc := range rc.ProjectConfigs {
-		var project *common.Resource
-		project, types[pc.Type] = types[pc.Type][0], types[pc.Type][1:]
+		project := popProject(pc.Type)
+		if project == nil {
+			err := fmt.Errorf("running out of project while creating resources")
+			logrus.WithError(err).Errorf("unable to create resources")
+			return nil, err
+		}
 		projectInfo := ProjectInfo{Name: project.Name}
 		for _, cl := range pc.Clusters {
 			var clusterInfo *InstanceInfo
 			clusterInfo, err = gcpClient.createCluster(project.Name, cl)
 			if err != nil {
+				logrus.WithError(err).Errorf("unable to create cluster on project %s", project.Name)
 				return nil, err
 			}
 			projectInfo.Clusters = append(projectInfo.Clusters, *clusterInfo)
@@ -121,6 +141,7 @@ func (rc *ResourceConfig) Construct(res *common.Resource, types common.TypeToRes
 			var vmInfo *InstanceInfo
 			vmInfo, err = gcpClient.createVM(project.Name, vm)
 			if err != nil {
+				logrus.WithError(err).Errorf("unable to create vm on project %s", project.Name)
 				return nil, err
 			}
 			projectInfo.VMs = append(projectInfo.VMs, *vmInfo)
@@ -204,37 +225,7 @@ func findVersionMatch(version string, supportedVersion []string) (string, error)
 }
 
 func generateName(prefix string) string {
-	return fmt.Sprintf("%s_%s", prefix, time.Now().Format("0102150405"))
-}
-
-func (cc *client) checkGKEOperation(project, zone, id string) error {
-	newOp, err := cc.gkeService.Projects.Zones.Operations.Get(project, zone, id).Do()
-	if err != nil {
-		return err
-	}
-	if newOp.Status == done {
-		if newOp.StatusMessage == "" {
-			return nil
-		}
-		return fmt.Errorf(newOp.StatusMessage)
-	}
-	time.Sleep(10 * time.Second)
-	return cc.checkGKEOperation(project, zone, id)
-}
-
-func (cc *client) checkGCEOperation(project, zone, id string) error {
-	newOp, err := cc.gceService.ZoneOperations.Get(project, zone, id).Do()
-	if err != nil {
-		return err
-	}
-	if newOp.Status == done {
-		if newOp.StatusMessage == "" {
-			return nil
-		}
-		return fmt.Errorf(newOp.StatusMessage)
-	}
-	time.Sleep(10 * time.Second)
-	return cc.checkGKEOperation(project, zone, id)
+	return fmt.Sprintf("%s-%s", prefix, time.Now().Format("0102150405"))
 }
 
 func (cc *client) createCluster(project string, config GKEClusterConfig) (*InstanceInfo, error) {
@@ -268,18 +259,17 @@ func (cc *client) createCluster(project string, config GKEClusterConfig) (*Insta
 	if err != nil {
 		return nil, err
 	}
-	if err = cc.checkGKEOperation(project, config.Zone, op.Name); err != nil {
-		return nil, err
-	}
+	logrus.Infof("Instance %s created via operation %s", clusterRequest.Cluster.Name, op.Name)
 	return &InstanceInfo{Name: name}, nil
 }
 
 func newComputeInstance(config GCEVMConfig, project, name string) *compute.Instance {
 	// Inconsistency between compute and container APIs
 	machineType := fmt.Sprintf("projects/%s/zones/%s/machineTypes/%s", project, config.Zone, config.MachineType)
+	zone := fmt.Sprintf("projects/%s/zones/%s", project, config.Zone)
 	instance := &compute.Instance{
 		Name:         name,
-		Zone:         config.Zone,
+		Zone:         zone,
 		MachineType:  machineType,
 		CanIpForward: true,
 		Disks: []*compute.AttachedDisk{
@@ -301,7 +291,6 @@ func newComputeInstance(config GCEVMConfig, project, name string) *compute.Insta
 						Type: oneToOneNAT,
 					},
 				},
-				Subnetwork: fmt.Sprintf("projects/%s/regions/%s/subnetworks/default", project, config.Zone),
 			},
 		},
 		ServiceAccounts: []*compute.ServiceAccount{
@@ -325,8 +314,6 @@ func (cc *client) createVM(project string, config GCEVMConfig) (*InstanceInfo, e
 	if err != nil {
 		return nil, err
 	}
-	if err = cc.checkGCEOperation(project, config.Zone, op.Name); err != nil {
-		return nil, err
-	}
+	logrus.Infof("Instance %s created via operation %s", instance.Name, op.Name)
 	return &InstanceInfo{Name: name}, nil
 }

@@ -144,7 +144,7 @@ func (in *Resource) ToResource() common.Resource {
 		Owner:      in.Status.Owner,
 		State:      in.Status.State,
 		LastUpdate: in.Status.LastUpdate,
-		Info:       in.Status.Info,
+		UserData:   in.Status.Info,
 	}
 }
 
@@ -159,7 +159,7 @@ func (in *Resource) FromResource(r common.Resource) {
 	in.Status.Owner = r.Owner
 	in.Status.State = r.State
 	in.Status.LastUpdate = r.LastUpdate
-	in.Status.Info = r.Info
+	in.Status.Info = r.UserData
 }
 
 func (in *Resource) FromItem(i common.Item) {

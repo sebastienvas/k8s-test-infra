@@ -248,11 +248,12 @@ func (c *Client) getConfig(name string) (*common.ResourceConfig, error) {
 }
 
 func (c *Client) update(name string, state string, info *common.ResourceInfo) error {
-	data, err := json.Marshal(info)
+	b := new(bytes.Buffer)
+	err := json.NewEncoder(b).Encode(info)
 	if err != nil {
 		return err
 	}
-	resp, err := http.Post(fmt.Sprintf("%v/update?name=%v&owner=%v&state=%v", c.url, name, c.owner, state), "application/json", bytes.NewBuffer(data))
+	resp, err := http.Post(fmt.Sprintf("%v/update?name=%v&owner=%v&state=%v", c.url, name, c.owner, state), "application/json", b)
 	if err != nil {
 		return err
 	}

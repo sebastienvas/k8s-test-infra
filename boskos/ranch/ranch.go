@@ -123,7 +123,7 @@ func (r *Ranch) updateResourceAndLeasedResources(res common.Resource) error {
 		return err
 	}
 
-	for _, rName := range res.Info.LeasedResources {
+	for _, rName := range res.UserData.LeasedResources {
 		lr, err := r.Storage.GetResource(rName)
 		if err != nil {
 			logrus.WithError(err).Errorf("could not find leased resource %s", rName)
@@ -238,7 +238,7 @@ func (r *Ranch) Update(name, owner, state string, info *common.ResourceInfo) err
 		return &StateNotMatch{res.State, state}
 	}
 	if info != nil {
-		res.Info = *info
+		res.UserData = *info
 	}
 	res.LastUpdate = time.Now()
 	return r.updateResourceAndLeasedResources(res)
@@ -412,6 +412,7 @@ func (r *Ranch) syncConfigs(newConfigs []common.ResourceConfig) error {
 	toAdd := newSet.Difference(currentSet)
 
 	for _, n := range toDelete.ToSlice() {
+		logrus.Infof("Deleting config %s", n.(string))
 		if err := r.Storage.DeleteConfig(n.(string)); err != nil {
 			logrus.WithError(err).Errorf("failed to delete config %s", n)
 			finalError = multierror.Append(finalError, err)
@@ -420,6 +421,7 @@ func (r *Ranch) syncConfigs(newConfigs []common.ResourceConfig) error {
 
 	for _, n := range toAdd.ToSlice() {
 		rc := configs[n.(string)]
+		logrus.Infof("Adding config %s", n.(string))
 		if err := r.Storage.AddConfig(rc); err != nil {
 			logrus.WithError(err).Errorf("failed to create resources %s", n)
 			finalError = multierror.Append(finalError, err)
@@ -428,6 +430,7 @@ func (r *Ranch) syncConfigs(newConfigs []common.ResourceConfig) error {
 
 	for _, n := range toUpdate.ToSlice() {
 		rc := configs[n.(string)]
+		logrus.Infof("Updating config %s", n.(string))
 		if err := r.Storage.UpdateConfig(rc); err != nil {
 			logrus.WithError(err).Errorf("failed to update resources %s", n)
 			finalError = multierror.Append(finalError, err)
@@ -474,7 +477,7 @@ func (r *Ranch) syncResources(data []common.Resource) error {
 		}
 		if toDelete {
 			logrus.Infof("Deleting resource %s", res.Name)
-			for _, name := range res.Info.LeasedResources {
+			for _, name := range res.UserData.LeasedResources {
 				lr, err := r.Storage.GetResource(name)
 				if err != nil {
 					logrus.WithError(err).Errorf("cannot release resource %s for resource to be deleted %s", name, res.Name)
