@@ -27,6 +27,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"k8s.io/test-infra/boskos/client"
 	"k8s.io/test-infra/boskos/common"
+	"k8s.io/test-infra/boskos/storage"
 )
 
 const (
@@ -153,12 +154,14 @@ func ValidateConfig(configs []common.ResourcesConfig, resources []common.Resourc
 func NewMasonFromFlags() *Mason {
 	boskos := client.NewClient(Owner, *client.BoskosUrl)
 	logrus.Info("Initialized boskos client!")
+
 	return NewMason(rTypes, *channelBufferSize, boskos, DefaultSleepTime)
 }
 
 func NewMason(rtypes []string, channelSize int, client boskosClient, sleepTime time.Duration) *Mason {
 	return &Mason{
 		client:           client,
+		storage:          *NewStorage(storage.NewMemoryStorage()),
 		pending:          make(chan Requirement, channelSize),
 		cleaned:          make(chan Requirement, channelSize),
 		fulfilled:        make(chan Requirement, channelSize),

@@ -107,7 +107,7 @@ func TestAcquire(t *testing.T) {
 		{
 			name: "no match state",
 			resources: []common.Resource{
-				common.NewResource("res","t", "wrong", "",FakeNow),
+				common.NewResource("res", "t", "wrong", "", FakeNow),
 			},
 			owner:     "user",
 			rtype:     "t",
@@ -118,7 +118,7 @@ func TestAcquire(t *testing.T) {
 		{
 			name: "busy",
 			resources: []common.Resource{
-				common.NewResource("res", "t", "s", "foo",FakeNow),
+				common.NewResource("res", "t", "s", "foo", FakeNow),
 			},
 			owner:     "user",
 			rtype:     "t",
@@ -175,7 +175,7 @@ func TestAcquire(t *testing.T) {
 func TestAcquireRoundRobin(t *testing.T) {
 	FakeNow := time.Now()
 	var resources []common.Resource
-	for i:=1; i<5; i++ {
+	for i := 1; i < 5; i++ {
 		resources = append(resources, common.NewResource("res-1", "t", "s", "", FakeNow))
 	}
 
@@ -216,7 +216,7 @@ func TestRelease(t *testing.T) {
 		{
 			name: "wrong owner",
 			resources: []common.Resource{
-				common.NewResource("res","t","s","merlin",FakeNow),
+				common.NewResource("res", "t", "s", "merlin", FakeNow),
 			},
 			resName:   "res",
 			owner:     "user",
@@ -226,7 +226,7 @@ func TestRelease(t *testing.T) {
 		{
 			name: "no match name",
 			resources: []common.Resource{
-				common.NewResource("foo","t","s","merlin",FakeNow),
+				common.NewResource("foo", "t", "s", "merlin", FakeNow),
 			},
 			resName:   "res",
 			owner:     "user",
@@ -236,7 +236,7 @@ func TestRelease(t *testing.T) {
 		{
 			name: "ok",
 			resources: []common.Resource{
-				common.NewResource("res","t","s","merlin",FakeNow),
+				common.NewResource("res", "t", "s", "merlin", FakeNow),
 			},
 			resName:   "res",
 			owner:     "merlin",
@@ -291,7 +291,7 @@ func TestReset(t *testing.T) {
 		{
 			name: "empty - has no owner",
 			resources: []common.Resource{
-				common.NewResource("res","t","s","",FakeNow.Add(-time.Minute * 20)),
+				common.NewResource("res", "t", "s", "", FakeNow.Add(-time.Minute*20)),
 			},
 			rtype:  "t",
 			state:  "s",
@@ -301,7 +301,7 @@ func TestReset(t *testing.T) {
 		{
 			name: "empty - not expire",
 			resources: []common.Resource{
-				common.NewResource("res","t","s","",FakeNow),
+				common.NewResource("res", "t", "s", "", FakeNow),
 			},
 			rtype:  "t",
 			state:  "s",
@@ -311,7 +311,7 @@ func TestReset(t *testing.T) {
 		{
 			name: "empty - no match type",
 			resources: []common.Resource{
-				common.NewResource("res","wrong","s","",FakeNow.Add(-time.Minute * 20)),
+				common.NewResource("res", "wrong", "s", "", FakeNow.Add(-time.Minute*20)),
 			},
 			rtype:  "t",
 			state:  "s",
@@ -321,7 +321,7 @@ func TestReset(t *testing.T) {
 		{
 			name: "empty - no match state",
 			resources: []common.Resource{
-				common.NewResource("res","t","wrong","",FakeNow.Add(-time.Minute * 20)),
+				common.NewResource("res", "t", "wrong", "", FakeNow.Add(-time.Minute*20)),
 			},
 			rtype:  "t",
 			state:  "s",
@@ -331,7 +331,7 @@ func TestReset(t *testing.T) {
 		{
 			name: "ok",
 			resources: []common.Resource{
-				common.NewResource("res","t","s","user",FakeNow.Add(-time.Minute * 20)),
+				common.NewResource("res", "t", "s", "user", FakeNow.Add(-time.Minute*20)),
 			},
 			rtype:      "t",
 			state:      "s",
@@ -390,7 +390,7 @@ func TestUpdate(t *testing.T) {
 		{
 			name: "wrong owner",
 			resources: []common.Resource{
-				common.NewResource("res","t","s", "merlin",FakeNow),
+				common.NewResource("res", "t", "s", "merlin", FakeNow),
 			},
 			resName:   "res",
 			owner:     "user",
@@ -400,7 +400,7 @@ func TestUpdate(t *testing.T) {
 		{
 			name: "wrong state",
 			resources: []common.Resource{
-				common.NewResource("res", "t", "s", "merlin",FakeNow),
+				common.NewResource("res", "t", "s", "merlin", FakeNow),
 			},
 			resName:   "res",
 			owner:     "merlin",
@@ -410,7 +410,7 @@ func TestUpdate(t *testing.T) {
 		{
 			name: "no matched resource",
 			resources: []common.Resource{
-				common.NewResource("foo","t","s","merlin",FakeNow),
+				common.NewResource("foo", "t", "s", "merlin", FakeNow),
 			},
 			resName:   "res",
 			owner:     "merlin",
@@ -420,7 +420,7 @@ func TestUpdate(t *testing.T) {
 		{
 			name: "ok",
 			resources: []common.Resource{
-				common.NewResource("res","t","s","merlin",FakeNow),
+				common.NewResource("res", "t", "s", "merlin", FakeNow),
 			},
 			resName: "res",
 			owner:   "merlin",
@@ -477,7 +477,7 @@ func TestMetric(t *testing.T) {
 		{
 			name: "no matching resource",
 			resources: []common.Resource{
-				common.NewResource("res","t","s","merlin", time.Now()),
+				common.NewResource("res", "t", "s", "merlin", time.Now()),
 			},
 			metricType: "foo",
 			expectErr:  &ResourceNotFound{"foo"},
@@ -485,7 +485,7 @@ func TestMetric(t *testing.T) {
 		{
 			name: "one resource",
 			resources: []common.Resource{
-				common.NewResource("res","t","s","merlin", time.Now()),
+				common.NewResource("res", "t", "s", "merlin", time.Now()),
 			},
 			metricType: "t",
 			expectMetric: common.Metric{
@@ -501,11 +501,11 @@ func TestMetric(t *testing.T) {
 		{
 			name: "multiple resources",
 			resources: []common.Resource{
-				common.NewResource("res-1","t","s", "merlin", time.Now()),
-				common.NewResource("res-2","t","p", "pony", time.Now()),
-				common.NewResource("res-3","t","s","pony", time.Now()),
+				common.NewResource("res-1", "t", "s", "merlin", time.Now()),
+				common.NewResource("res-2", "t", "p", "pony", time.Now()),
+				common.NewResource("res-3", "t", "s", "pony", time.Now()),
 				common.NewResource("res-4", "foo", "s", "pony", time.Now()),
-				common.NewResource("res-5","t","d", "merlin", time.Now()),
+				common.NewResource("res-5", "t", "d", "merlin", time.Now()),
 			},
 			metricType: "t",
 			expectMetric: common.Metric{
@@ -540,7 +540,6 @@ func TestMetric(t *testing.T) {
 }
 
 func TestSyncResources(t *testing.T) {
-	fakeNow := time.Now()
 	var testcases = []struct {
 		name   string
 		oldRes []common.Resource
@@ -553,76 +552,76 @@ func TestSyncResources(t *testing.T) {
 		{
 			name: "append",
 			newRes: []common.Resource{
-				common.NewResource("res","t","", "", fakeNow),
+				common.NewResource("res", "t", "", "", time.Time{}),
 			},
 			expect: []common.Resource{
-				common.NewResource("res", "t","free","", fakeNow),
+				common.NewResource("res", "t", "free", "", time.Time{}),
 			},
 		},
 		{
 			name: "should not have a type change",
 			oldRes: []common.Resource{
-				common.NewResource("rob","res","t","", time.Now()),
+				common.NewResource("res", "t", "", "", time.Time{}),
 			},
 			newRes: []common.Resource{
-				common.NewResource("res","d","","",time.Now()),
+				common.NewResource("res", "d", "", "", time.Time{}),
 			},
 			expect: []common.Resource{
-				common.NewResource("rob","res","t","",time.Now()),
+				common.NewResource("res", "t", "", "", time.Time{}),
 			},
 		},
 		{
 			name: "delete",
 			oldRes: []common.Resource{
-				common.NewResource("res","t","","",time.Now()),
+				common.NewResource("res", "t", "", "", time.Time{}),
 			},
 		},
 		{
 			name: "delete busy",
 			oldRes: []common.Resource{
-				common.NewResource("res","t","busy","o",time.Now()),
+				common.NewResource("res", "t", "busy", "o", time.Time{}),
 			},
 			expect: []common.Resource{
-				common.NewResource("res","t","busy","o",time.Now()),
+				common.NewResource("res", "t", "busy", "o", time.Time{}),
 			},
 		},
 		{
 			name: "append and delete",
 			oldRes: []common.Resource{
-				common.NewResource("res-1","t","","",time.Now()),
+				common.NewResource("res-1", "t", "", "", time.Time{}),
 			},
 			newRes: []common.Resource{
-				common.NewResource("res-2","t","","",time.Now()),
+				common.NewResource("res-2", "t", "", "", time.Time{}),
 			},
 			expect: []common.Resource{
-				common.NewResource("res-2","t","free","",time.Now()),
+				common.NewResource("res-2", "t", "free", "", time.Time{}),
 			},
 		},
 		{
 			name: "append and delete busy",
 			oldRes: []common.Resource{
-				common.NewResource("res-1","t","busy","o",time.Now()),
+				common.NewResource("res-1", "t", "busy", "o", time.Time{}),
 			},
 			newRes: []common.Resource{
-				common.NewResource("res-2","t","","",time.Now()),
+				common.NewResource("res-2", "t", "", "", time.Time{}),
 			},
 			expect: []common.Resource{
-				common.NewResource("res-1","t","busy","o",time.Now()),
-				common.NewResource("res-2","t","free","",time.Now()),
+				common.NewResource("res-1", "t", "busy", "o", time.Time{}),
+				common.NewResource("res-2", "t", "free", "", time.Time{}),
 			},
 		},
 		{
 			name: "append/delete mixed type",
 			oldRes: []common.Resource{
-				common.NewResource("res-1", "t", "", "", time.Now()),
+				common.NewResource("res-1", "t", "", "", time.Time{}),
 			},
 			newRes: []common.Resource{
-				common.NewResource("res-2", "t", "", "", time.Now()),
-				common.NewResource("res-3", "t2", "", "", time.Now()),
+				common.NewResource("res-2", "t", "", "", time.Time{}),
+				common.NewResource("res-3", "t2", "", "", time.Time{}),
 			},
 			expect: []common.Resource{
-				common.NewResource("res-2", "t", "free", "", time.Now()),
-				common.NewResource("res-3", "t2", "free", "", time.Now()),
+				common.NewResource("res-2", "t", "free", "", time.Time{}),
+				common.NewResource("res-3", "t2", "free", "", time.Time{}),
 			},
 		},
 	}

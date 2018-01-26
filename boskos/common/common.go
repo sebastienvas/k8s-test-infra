@@ -51,9 +51,9 @@ type Resource struct {
 
 // ResourceEntry is resource config format defined from config.yaml
 type ResourceEntry struct {
-	Type      string   `json:"type"`
-	State     string   `json:"state"`
-	Names     []string `json:"names,flow"`
+	Type  string   `json:"type"`
+	State string   `json:"state"`
+	Names []string `json:"names,flow"`
 }
 
 type BoskosConfig struct {
@@ -81,7 +81,7 @@ func NewResource(name, rtype, state, owner string, t time.Time) Resource {
 func NewResourcesFromConfig(e ResourceEntry) []Resource {
 	var resources []Resource
 	for _, name := range e.Names {
-		resources = append(resources, NewResource(name, e.Type, e.State, "", time.))
+		resources = append(resources, NewResource(name, e.Type, e.State, "", time.Time{}))
 	}
 	return resources
 }

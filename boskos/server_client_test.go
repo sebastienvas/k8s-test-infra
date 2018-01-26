@@ -1,10 +1,11 @@
 package main
 
 import (
-	"net/http/httptest"
-
 	"reflect"
 	"testing"
+	"time"
+
+	"net/http/httptest"
 
 	"k8s.io/test-infra/boskos/client"
 	"k8s.io/test-infra/boskos/common"
@@ -22,17 +23,13 @@ func TestAcquireUpdate(t *testing.T) {
 		resource common.Resource
 	}{
 		{
-			name: "noInfo",
-			resource: common.Resource{
-				Type:  "Type",
-				Name:  "test",
-				State: "dirty",
-			},
+			name:     "noInfo",
+			resource: common.NewResource("test", "type", common.Dirty, "", time.Time{}),
 		},
 		{
 			name: "existingInfo",
 			resource: common.Resource{
-				Type:     "Type",
+				Type:     "type",
 				Name:     "test",
 				State:    "dirty",
 				UserData: common.UserData{"test": "old"},

@@ -33,14 +33,12 @@ import (
 
 const (
 	fakeConfigType = "fakeConfig"
-	fakeInfoType   = "fakeInfo"
 	emptyContent   = "empty content"
 )
 
 type fakeBoskos struct {
 	lock      sync.Mutex
 	resources map[string]*common.Resource
-	configs   map[string]*common.ResourcesConfig
 }
 
 type testConfig map[string]struct {
@@ -60,38 +58,39 @@ func (fc *fakeConfig) Construct(res *common.Resource, typeToRes common.TypeToRes
 }
 
 // Create a fake client
-func createFakeBoskos(tc testConfig) *fakeBoskos {
+func createFakeBoskos(tc testConfig) (*fakeBoskos, []common.ResourcesConfig) {
 	fb := &fakeBoskos{}
 	resources := map[string]*common.Resource{}
-	configs := map[string]*common.ResourcesConfig{}
+	configNames := map[string]bool{}
+	var configs []common.ResourcesConfig
 
 	for rtype, c := range tc {
 		for i := 0; i < c.count; i++ {
 			res := common.Resource{
-				Type:  rtype,
-				Name:  fmt.Sprintf("%s_%d", rtype, i),
-				State: common.Free,
+				Type:     rtype,
+				Name:     fmt.Sprintf("%s_%d", rtype, i),
+				State:    common.Free,
 				UserData: common.UserData{},
 			}
 			if c.resourceNeeds != nil {
 				res.State = common.Dirty
-				if _, ok := configs[rtype]; !ok {
-					configs[rtype] = &common.ResourcesConfig{
+				if _, ok := configNames[rtype]; !ok {
+					configNames[rtype] = true
+					configs = append(configs, common.ResourcesConfig{
 						Config: common.TypedContent{
 							Type:    fakeConfigType,
 							Content: emptyContent,
 						},
 						Name:  rtype,
 						Needs: *c.resourceNeeds,
-					}
+					})
 				}
 			}
 			resources[res.Name] = &res
 		}
 	}
 	fb.resources = resources
-	fb.configs = configs
-	return fb
+	return fb, configs
 }
 
 func (fb *fakeBoskos) Acquire(rtype, state, dest string) (*common.Resource, error) {
@@ -133,16 +132,6 @@ func (fb *fakeBoskos) UpdateOne(name, state string, userData *common.UserData) e
 	return fmt.Errorf("no resource %v", name)
 }
 
-func (fb *fakeBoskos) GetConfig(name string) (*common.ResourcesConfig, error) {
-	fb.lock.Lock()
-	defer fb.lock.Unlock()
-	config, ok := fb.configs[name]
-	if ok {
-		return config, nil
-	}
-	return nil, fmt.Errorf("no resource %v", name)
-}
-
 func TestRecycleLeasedResources(t *testing.T) {
 	masonTypes := []string{"type2"}
 	tc := testConfig{
@@ -157,10 +146,11 @@ func TestRecycleLeasedResources(t *testing.T) {
 		},
 	}
 
-	bclient := createFakeBoskos(tc)
+	bclient, configs := createFakeBoskos(tc)
 	bclient.resources["type1_0"].State = Leased
 	bclient.resources["type2_0"].UserData.Set(LeasedResources, &[]string{"type1_0"})
 	m := NewMason(masonTypes, 1, bclient, time.Millisecond)
+	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.start(m.recycleAll)
 	select {
@@ -192,8 +182,9 @@ func TestRecycleNoLeasedResources(t *testing.T) {
 		},
 	}
 
-	bclient := createFakeBoskos(tc)
+	bclient, configs := createFakeBoskos(tc)
 	m := NewMason(masonTypes, 1, bclient, time.Millisecond)
+	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.start(m.recycleAll)
 	select {
@@ -225,12 +216,17 @@ func TestFulfillOne(t *testing.T) {
 		},
 	}
 
-	bclient := createFakeBoskos(tc)
+	bclient, configs := createFakeBoskos(tc)
 	m := NewMason(masonTypes, 1, bclient, time.Millisecond)
+	m.storage.SyncConfigs(configs)
 	res := bclient.resources["type2_0"]
+	conf, err := m.storage.GetConfig("type2")
+	if err != nil {
+		t.Error("failed to get config")
+	}
 	req := Requirement{
 		resource:    *res,
-		needs:       bclient.configs["type2"].Needs,
+		needs:       conf.Needs,
 		fulfillment: common.TypeToResources{},
 	}
 	if err := m.fulfillOne(&req); err != nil {
@@ -262,8 +258,9 @@ func TestMason(t *testing.T) {
 			count: 10,
 		},
 	}
-	bclient := createFakeBoskos(tc)
+	bclient, configs := createFakeBoskos(tc)
 	m := NewMason(masonTypes, 5, bclient, time.Millisecond)
+	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()
 	<-time.After(2 * time.Second)
@@ -302,8 +299,9 @@ func TestMasonStartStop(t *testing.T) {
 			count: 10,
 		},
 	}
-	bclient := createFakeBoskos(tc)
+	bclient, configs := createFakeBoskos(tc)
 	m := NewMason(masonTypes, 5, bclient, time.Millisecond)
+	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()
 	m.Stop()
