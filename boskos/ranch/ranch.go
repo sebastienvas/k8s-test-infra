@@ -162,7 +162,7 @@ func (r *Ranch) Release(name, dest, owner string) error {
 //      OwnerNotMatch error if owner does not match current owner of the resource, or
 //      ResourceNotFound error if target named resource does not exist, or
 //      StateNotMatch error if state does not match current state of the resource.
-func (r *Ranch) Update(name, owner, state string, ud *common.UserData) error {
+func (r *Ranch) Update(name, owner, state string, ud common.UserData) error {
 	r.resourcesLock.Lock()
 	defer r.resourcesLock.Unlock()
 

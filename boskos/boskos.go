@@ -283,7 +283,7 @@ func handleUpdate(r *ranch.Ranch) http.HandlerFunc {
 			return
 		}
 
-		var userData *common.UserData
+		var userData common.UserData
 
 		if req.Body != nil {
 			defer req.Body.Close()

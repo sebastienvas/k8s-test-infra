@@ -86,6 +86,15 @@ func NewResourcesFromConfig(e ResourceEntry) []Resource {
 	return resources
 }
 
+// ResourceNotFound will be returned if requested resource does not exist.
+type UserDataNotFound struct {
+	id string
+}
+
+func (ud *UserDataNotFound) Error() string {
+	return fmt.Sprintf("user data id %s does not exist", ud.id)
+}
+
 type ResourceByUpdateTime []Resource
 
 func (ut ResourceByUpdateTime) Len() int           { return len(ut) }
@@ -119,7 +128,7 @@ func (res Resource) GetName() string { return res.Name }
 func (ud UserData) Extract(id string, out interface{}) error {
 	content, ok := ud[id]
 	if !ok {
-		return fmt.Errorf("UserData for id %s cannot be found", id)
+		return &UserDataNotFound{id}
 	}
 	return json.Unmarshal([]byte(content), out)
 }
@@ -133,9 +142,9 @@ func (ud UserData) Set(id string, in interface{}) error {
 	return nil
 }
 
-func (ud UserData) Update(new *UserData) {
+func (ud UserData) Update(new UserData) {
 	if new != nil {
-		for id, content := range *new {
+		for id, content := range new {
 			if content != "" {
 				ud[id] = content
 			} else {

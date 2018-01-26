@@ -41,7 +41,7 @@ func TestAcquireUpdate(t *testing.T) {
 		boskos := makeTestBoskos(r)
 		owner := "owner"
 		client := client.NewClient(owner, boskos.URL)
-		userData := &common.UserData{"test": "new"}
+		userData := common.UserData{"test": "new"}
 
 		newState := "acquired"
 		receivedRes, err := client.Acquire(tc.resource.Type, tc.resource.State, newState)
@@ -60,8 +60,8 @@ func TestAcquireUpdate(t *testing.T) {
 		if err != nil {
 			t.Error("unable to list resources")
 		}
-		if !reflect.DeepEqual(updatedResource.UserData, *userData) {
-			t.Errorf("info should match. Expected \n%v, received \n%v", *userData, updatedResource.UserData)
+		if !reflect.DeepEqual(updatedResource.UserData, userData) {
+			t.Errorf("info should match. Expected \n%v, received \n%v", userData, updatedResource.UserData)
 		}
 	}
 }

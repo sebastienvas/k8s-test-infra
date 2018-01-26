@@ -49,7 +49,7 @@ func init() {
 
 // Masonable should be implemented by all configurations
 type Masonable interface {
-	Construct(*common.Resource, common.TypeToResources) (*common.UserData, error)
+	Construct(*common.Resource, common.TypeToResources) (common.UserData, error)
 }
 
 type ConfigConverter func(string) (Masonable, error)
@@ -57,7 +57,7 @@ type ConfigConverter func(string) (Masonable, error)
 type boskosClient interface {
 	Acquire(rtype, state, dest string) (*common.Resource, error)
 	ReleaseOne(name, dest string) error
-	UpdateOne(name, state string, userData *common.UserData) error
+	UpdateOne(name, state string, userData common.UserData) error
 }
 
 type Mason struct {
@@ -247,7 +247,7 @@ func (m *Mason) freeAll() {
 
 func (m *Mason) freeOne(res *common.Resource) error {
 	// Update Resource with Leased Resource and UserData
-	if err := m.client.UpdateOne(res.Name, res.State, &res.UserData); err != nil {
+	if err := m.client.UpdateOne(res.Name, res.State, res.UserData); err != nil {
 		logrus.WithError(err).Errorf("failed to update resource %s", res.Name)
 		return err
 	}
@@ -300,10 +300,12 @@ func (m *Mason) recycleOne(res *common.Resource) (*Requirement, error) {
 	}
 
 	// Releasing leased resources
-	var leasedResources map[string]string
+	var leasedResources common.LeasedResources
 	if err := res.UserData.Extract(LeasedResources, &leasedResources); err != nil {
-		logrus.WithError(err).Error("cannot parse %s from User Data", LeasedResources)
-		return nil, err
+		if _, ok := err.(*common.UserDataNotFound); !ok {
+			logrus.WithError(err).Errorf("cannot parse %s from User Data", LeasedResources)
+			return nil, err
+		}
 	}
 	for _, l := range leasedResources {
 		if err := m.client.ReleaseOne(l, common.Dirty); err != nil {
@@ -312,7 +314,7 @@ func (m *Mason) recycleOne(res *common.Resource) (*Requirement, error) {
 		}
 	}
 	newUserData := common.UserData{LeasedResources: ""}
-	if err := m.client.UpdateOne(res.Name, res.State, &newUserData); err != nil {
+	if err := m.client.UpdateOne(res.Name, res.State, newUserData); err != nil {
 		logrus.WithError(err).Errorf("could not update resource %s with freed leased resources")
 	}
 	delete(res.UserData, LeasedResources)
@@ -356,18 +358,18 @@ func (m *Mason) fulfillOne(req *Requirement) error {
 				return fmt.Errorf("shutting down")
 			}
 			if req.IsFulFilled() {
-				var leasedResources []string
+				var leasedResources common.LeasedResources
 				for _, lr := range req.fulfillment {
 					for _, r := range lr {
 						leasedResources = append(leasedResources, r.Name)
 					}
 				}
 				userData := common.UserData{}
-				if err := userData.Set(LeasedResources, leasedResources); err != nil {
+				if err := userData.Set(LeasedResources, &leasedResources); err != nil {
 					logrus.WithError(err).Error("failed to add %s user data", LeasedResources)
 					return err
 				}
-				if err := m.client.UpdateOne(req.resource.Name, req.resource.State, &userData); err != nil {
+				if err := m.client.UpdateOne(req.resource.Name, req.resource.State, userData); err != nil {
 					logrus.WithError(err).Errorf("Unable to release resource %s", req.resource.Name)
 					return err
 				}

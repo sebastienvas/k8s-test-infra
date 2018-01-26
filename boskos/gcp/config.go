@@ -93,7 +93,7 @@ type client struct {
 	gceService *compute.Service
 }
 
-func (rc *ResourcesConfig) Construct(res *common.Resource, types common.TypeToResources) (*common.UserData, error) {
+func (rc *ResourcesConfig) Construct(res *common.Resource, types common.TypeToResources) (common.UserData, error) {
 	info := ResourceInfo{}
 	var err error
 
@@ -151,7 +151,7 @@ func (rc *ResourcesConfig) Construct(res *common.Resource, types common.TypeToRe
 		logrus.WithError(err).Errorf("unable to set %s user data", ResourceConfigType)
 		return nil, err
 	}
-	return &userData, nil
+	return userData, nil
 }
 
 func (rc *ResourcesConfig) GetName() string {

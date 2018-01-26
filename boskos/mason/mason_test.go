@@ -53,8 +53,8 @@ func fakeConfigConverter(in string) (Masonable, error) {
 	return &fakeConfig{}, nil
 }
 
-func (fc *fakeConfig) Construct(res *common.Resource, typeToRes common.TypeToResources) (*common.UserData, error) {
-	return &common.UserData{"fakeConfig": "unused"}, nil
+func (fc *fakeConfig) Construct(res *common.Resource, typeToRes common.TypeToResources) (common.UserData, error) {
+	return common.UserData{"fakeConfig": "unused"}, nil
 }
 
 // Create a fake client
@@ -120,7 +120,7 @@ func (fb *fakeBoskos) ReleaseOne(name, dest string) error {
 	return fmt.Errorf("no resource %v", name)
 }
 
-func (fb *fakeBoskos) UpdateOne(name, state string, userData *common.UserData) error {
+func (fb *fakeBoskos) UpdateOne(name, state string, userData common.UserData) error {
 	fb.lock.Lock()
 	defer fb.lock.Unlock()
 	res, ok := fb.resources[name]
@@ -316,7 +316,7 @@ func TestConfig(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if err := ValidateConfig(configs, resources); err != nil {
+	if err := ValidateConfig(configs, resources); err == nil {
 		t.Error(err)
 	}
 }

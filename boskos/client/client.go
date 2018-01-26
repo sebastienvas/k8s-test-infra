@@ -132,7 +132,7 @@ func (c *Client) UpdateAll(state string) error {
 }
 
 // UpdateOne signals update for one of the resource hold by the client.
-func (c *Client) UpdateOne(name, state string, userData *common.UserData) error {
+func (c *Client) UpdateOne(name, state string, userData common.UserData) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -219,7 +219,7 @@ func (c *Client) release(name, dest string) error {
 	return nil
 }
 
-func (c *Client) update(name, state string, userData *common.UserData) error {
+func (c *Client) update(name, state string, userData common.UserData) error {
 	b := new(bytes.Buffer)
 	err := json.NewEncoder(b).Encode(userData)
 	if err != nil {
