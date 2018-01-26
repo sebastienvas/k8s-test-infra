@@ -21,28 +21,23 @@ import (
 	"io/ioutil"
 	"os"
 	"sort"
+	"sync"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v2"
 	"k8s.io/test-infra/boskos/common"
+	"k8s.io/test-infra/boskos/storage"
 )
 
-type StorageInterface interface {
-	Add(i common.Item) error
-	Delete(name string) error
-	Update(i common.Item) error
-	Get(name string) (common.Item, error)
-	List() ([]common.Item, error)
-}
-
 type Storage struct {
-	resources StorageInterface
-	configs   StorageInterface
+	resources     storage.Interface
+	resourcesLock sync.RWMutex
 }
 
-func NewStorage(c, r StorageInterface, storage string) (*Storage, error) {
+func NewStorage(r storage.Interface, storage string) (*Storage, error) {
 	s := &Storage{
 		resources: r,
-		configs:   c,
 	}
 
 	if storage != "" {
@@ -107,48 +102,99 @@ func (s *Storage) GetResources() ([]common.Resource, error) {
 		}
 		resources = append(resources, res)
 	}
-	sort.Stable(ResourceByUpdateTime(resources))
+	sort.Stable(common.ResourceByUpdateTime(resources))
 	return resources, nil
 }
 
-func (s *Storage) AddConfig(conf common.ResourceConfig) error {
-	return s.configs.Add(conf)
-}
+// Boskos resource config will be updated every 10 mins.
+// It will append newly added resources to ranch.Resources,
+// And try to remove newly deleted resources from ranch.Resources.
+// If the newly deleted resource is currently held by a user, the deletion will
+// yield to next update cycle.
+func (s *Storage) SyncResources(data []common.Resource) error {
+	s.resourcesLock.Lock()
+	defer s.resourcesLock.Unlock()
 
-func (s *Storage) DeleteConfig(name string) error {
-	return s.configs.Delete(name)
-}
-
-func (s *Storage) UpdateConfig(conf common.ResourceConfig) error {
-	return s.configs.Update(conf)
-}
-
-func (s *Storage) GetConfig(name string) (common.ResourceConfig, error) {
-	i, err := s.configs.Get(name)
+	resources, err := s.GetResources()
 	if err != nil {
-		return common.ResourceConfig{}, err
+		logrus.WithError(err).Error("cannot find resources")
+		return err
 	}
-	var conf common.ResourceConfig
-	conf, err = common.ItemToResourceConfig(i)
-	if err != nil {
-		return common.ResourceConfig{}, err
-	}
-	return conf, nil
-}
 
-func (s *Storage) GetConfigs() ([]common.ResourceConfig, error) {
-	var configs []common.ResourceConfig
-	items, err := s.configs.List()
-	if err != nil {
-		return configs, err
-	}
-	for _, i := range items {
-		var conf common.ResourceConfig
-		conf, err = common.ItemToResourceConfig(i)
-		if err != nil {
-			return nil, err
+	var finalError error
+
+	// delete non-exist resource
+	valid := 0
+	for _, res := range resources {
+		// If currently busy, yield deletion to later cycles.
+		if res.Owner != "" {
+			resources[valid] = res
+			valid++
+			continue
 		}
-		configs = append(configs, conf)
+		toDelete := true
+		for _, newRes := range data {
+			if res.Name == newRes.Name {
+				resources[valid] = res
+				valid++
+				toDelete = false
+				break
+			}
+		}
+		if toDelete {
+			logrus.Infof("Deleting resource %s", res.Name)
+			if err := s.DeleteResource(res.Name); err != nil {
+				finalError = multierror.Append(finalError, err)
+				logrus.WithError(err).Errorf("unable to delete resource %s", res.Name)
+			}
+		}
 	}
-	return configs, nil
+	resources = resources[:valid]
+
+	// add new resource
+	for _, p := range data {
+		found := false
+		for idx := range resources {
+			exist := resources[idx]
+			if p.Name == exist.Name {
+				found = true
+				logrus.Infof("Keeping resource %s", p.Name)
+				break
+			}
+		}
+
+		if !found {
+			if p.State == "" {
+				p.State = common.Free
+			}
+			logrus.Infof("Adding resource %s", p.Name)
+			resources = append(resources, p)
+			if err := s.AddResource(p); err != nil {
+				logrus.WithError(err).Errorf("unable to add resource %s", p.Name)
+				finalError = multierror.Append(finalError, err)
+			}
+		}
+	}
+	return finalError
+}
+
+// ParseConfig reads in configPath and returns a list of resource objects
+// on success.
+func ParseConfig(configPath string) ([]common.Resource, error) {
+	file, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var data common.BoskosConfig
+	err = yaml.Unmarshal(file, &data)
+	if err != nil {
+		return nil, err
+	}
+
+	var resources []common.Resource
+	for _, entry := range data.Resources {
+		resources = append(resources, common.NewResourcesFromConfig(entry)...)
+	}
+	return resources, nil
 }

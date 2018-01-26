@@ -21,11 +21,14 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"k8s.io/test-infra/boskos/gcp"
 	"k8s.io/test-infra/boskos/mason"
 )
+
+var storagePath = flag.String("storage", "", "Path to persistent volume to load configs")
 
 func main() {
 	logrus.SetFormatter(&logrus.JSONFormatter{})
@@ -33,11 +36,23 @@ func main() {
 	flag.Parse()
 	mason := mason.NewMasonFromFlags()
 
-	// Registering Config Converters
+	// Registering Masonable Converters
 	if err := mason.RegisterConfigConverter(gcp.ResourceConfigType, gcp.ConfigConverter); err != nil {
 		logrus.WithError(err).Fatal("unable tp register config converter")
 	}
 	logrus.Info("Initialized boskos client!")
+
+	if *storagePath != "" {
+		go func() {
+			configTick := time.NewTicker(time.Minute * 10).C
+			for {
+				select {
+				case <-configTick:
+					mason.UpdateConfigs(*storagePath)
+				}
+			}
+		}()
+	}
 
 	mason.Start()
 	sigs := make(chan os.Signal, 1)

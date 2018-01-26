@@ -19,46 +19,19 @@ package ranch
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"reflect"
 	"sync"
 	"time"
 
-	"github.com/deckarep/golang-set"
-	"github.com/hashicorp/go-multierror"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v2"
-	"k8s.io/test-infra/boskos/common"
-)
 
-const (
-	DeleteGracePeriodSeconds = 10
+	"k8s.io/test-infra/boskos/common"
 )
 
 // Ranch is the place which all of the Resource objects lives.
 type Ranch struct {
 	Storage       *Storage
 	resourcesLock sync.RWMutex
-	configsLock   sync.RWMutex
 }
-
-type ResourceByUpdateTime []common.Resource
-
-func (ut ResourceByUpdateTime) Len() int           { return len(ut) }
-func (ut ResourceByUpdateTime) Swap(i, j int)      { ut[i], ut[j] = ut[j], ut[i] }
-func (ut ResourceByUpdateTime) Less(i, j int) bool { return ut[i].LastUpdate.Before(ut[j].LastUpdate) }
-
-type ResourceByName []common.Resource
-
-func (ut ResourceByName) Len() int           { return len(ut) }
-func (ut ResourceByName) Swap(i, j int)      { ut[i], ut[j] = ut[j], ut[i] }
-func (ut ResourceByName) Less(i, j int) bool { return ut[i].GetName() < ut[j].GetName() }
-
-type ConfigByName []common.ResourceConfig
-
-func (ut ConfigByName) Len() int           { return len(ut) }
-func (ut ConfigByName) Swap(i, j int)      { ut[i], ut[j] = ut[j], ut[i] }
-func (ut ConfigByName) Less(i, j int) bool { return ut[i].GetName() < ut[j].GetName() }
 
 // Public errors:
 
@@ -117,27 +90,6 @@ func NewRanch(config string, s *Storage) (*Ranch, error) {
 	return newRanch, nil
 }
 
-func (r *Ranch) updateResourceAndLeasedResources(res common.Resource) error {
-	if err := r.Storage.UpdateResource(res); err != nil {
-		logrus.WithError(err).Errorf("could not update resource %s", res.Name)
-		return err
-	}
-
-	for _, rName := range res.UserData.LeasedResources {
-		lr, err := r.Storage.GetResource(rName)
-		if err != nil {
-			logrus.WithError(err).Errorf("could not find leased resource %s", rName)
-			return err
-		}
-		res.LastUpdate = time.Now()
-		if err := r.Storage.UpdateResource(lr); err != nil {
-			logrus.WithError(err).Errorf("could not update leased resource %s", rName)
-			return err
-		}
-	}
-	return nil
-}
-
 // Acquire checks out a type of resource in certain state without an owner,
 // and move the checked out resource to the end of the resource list.
 // In: rtype - name of the target resource
@@ -162,30 +114,14 @@ func (r *Ranch) Acquire(rType, state, dest, owner string) (*common.Resource, err
 			res.LastUpdate = time.Now()
 			res.Owner = owner
 			res.State = dest
-			if err = r.updateResourceAndLeasedResources(res); err != nil {
+			if err := r.Storage.UpdateResource(res); err != nil {
+				logrus.WithError(err).Errorf("could not update resource %s", res.Name)
 				return nil, err
 			}
 			return &res, nil
 		}
 	}
 	return nil, &ResourceNotFound{rType}
-}
-
-// GetConfig returns the StructInfo for a given config name.
-// In: name - name of the target config
-// Out:
-//   A valid  StructInfo object on success, or
-//   ResourceConfigNotFound error if target named config does not exist.
-func (r *Ranch) GetConfig(name string) (*common.ResourceConfig, error) {
-	r.configsLock.Lock()
-	defer r.configsLock.Unlock()
-
-	conf, err := r.Storage.GetConfig(name)
-	if err != nil {
-		logrus.WithError(err).Errorf("Unable to get config for %s", name)
-		return nil, ResourceConfigNotFound{name}
-	}
-	return &conf, nil
 }
 
 // Release unsets owner for target resource and move it to a new state.
@@ -210,7 +146,11 @@ func (r *Ranch) Release(name, dest, owner string) error {
 	res.LastUpdate = time.Now()
 	res.Owner = ""
 	res.State = dest
-	return r.updateResourceAndLeasedResources(res)
+	if err := r.Storage.UpdateResource(res); err != nil {
+		logrus.WithError(err).Errorf("could not update resource %s", res.Name)
+		return err
+	}
+	return nil
 }
 
 // Update updates the timestamp of a target resource.
@@ -222,7 +162,7 @@ func (r *Ranch) Release(name, dest, owner string) error {
 //      OwnerNotMatch error if owner does not match current owner of the resource, or
 //      ResourceNotFound error if target named resource does not exist, or
 //      StateNotMatch error if state does not match current state of the resource.
-func (r *Ranch) Update(name, owner, state string, info *common.ResourceInfo) error {
+func (r *Ranch) Update(name, owner, state string, ud *common.UserData) error {
 	r.resourcesLock.Lock()
 	defer r.resourcesLock.Unlock()
 
@@ -237,11 +177,13 @@ func (r *Ranch) Update(name, owner, state string, info *common.ResourceInfo) err
 	if state != res.State {
 		return &StateNotMatch{res.State, state}
 	}
-	if info != nil {
-		res.UserData = *info
-	}
+	res.UserData.Update(ud)
 	res.LastUpdate = time.Now()
-	return r.updateResourceAndLeasedResources(res)
+	if err := r.Storage.UpdateResource(res); err != nil {
+		logrus.WithError(err).Errorf("could not update resource %s", res.Name)
+		return err
+	}
+	return nil
 }
 
 // Reset unstucks a type of stale resource to a new state.
@@ -270,7 +212,8 @@ func (r *Ranch) Reset(rtype, state string, expire time.Duration, dest string) (m
 				ret[res.Name] = res.Owner
 				res.Owner = ""
 				res.State = dest
-				if err = r.updateResourceAndLeasedResources(res); err != nil {
+				if err := r.Storage.UpdateResource(res); err != nil {
+					logrus.WithError(err).Errorf("could not update resource %s", res.Name)
 					return ret, err
 				}
 			}
@@ -296,242 +239,14 @@ func (r *Ranch) LogStatus() {
 
 // SyncConfig updates resource list from a file
 func (r *Ranch) SyncConfig(config string) error {
-	resources, configs, err := ParseConfig(config)
+	resources, err := ParseConfig(config)
 	if err != nil {
 		return err
 	}
-	if err := r.syncResources(resources); err != nil {
-		return err
-	}
-	if err := r.syncConfigs(configs); err != nil {
+	if err := r.Storage.SyncResources(resources); err != nil {
 		return err
 	}
 	return nil
-}
-
-// ParseConfig reads in configPath and returns a list of resource objects
-// on success.
-func ParseConfig(configPath string) ([]common.Resource, []common.ResourceConfig, error) {
-	file, err := ioutil.ReadFile(configPath)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var data common.BoskosConfig
-	err = yaml.Unmarshal(file, &data)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	resourcesNeeds := map[string]int{}
-	actualResources := map[string]int{}
-
-	configNames := map[string]map[string]int{}
-	configs := data.Configs
-	for _, c := range configs {
-		configNames[c.Name] = c.Needs
-	}
-
-	var resources []common.Resource
-	for _, res := range data.Resources {
-		if res.UseConfig {
-			c, ok := configNames[res.Type]
-			if !ok {
-				err := fmt.Errorf("resource type %s does not have associated config", res.Type)
-				logrus.WithError(err).Error("using useconfig implies associated config")
-				return nil, nil, err
-			}
-			// Updating resourceNeeds
-			for k, v := range c {
-				resourcesNeeds[k] += v
-			}
-		}
-		for _, name := range res.Names {
-			resources = append(resources, common.Resource{
-				Type:      res.Type,
-				State:     res.State,
-				Name:      name,
-				UseConfig: res.UseConfig,
-			})
-		}
-		actualResources[res.Type] = len(res.Names)
-	}
-
-	for rType, needs := range resourcesNeeds {
-		actual, ok := actualResources[rType]
-		if !ok {
-			err := fmt.Errorf("need for resource %s that does not exist", rType)
-			logrus.WithError(err).Errorf("invalid configuration")
-			return nil, nil, err
-		}
-		if needs > actual {
-			err := fmt.Errorf("not enough resource of type %s for provisioning", rType)
-			logrus.WithError(err).Errorf("invalid configuration")
-			return nil, nil, err
-		}
-	}
-	return resources, configs, nil
-}
-
-func (r *Ranch) syncConfigs(newConfigs []common.ResourceConfig) error {
-	r.configsLock.Lock()
-	defer r.configsLock.Unlock()
-
-	currentConfigs, err := r.Storage.GetConfigs()
-	if err != nil {
-		logrus.WithError(err).Error("cannot find configs")
-		return err
-	}
-
-	currentSet := mapset.NewSet()
-	newSet := mapset.NewSet()
-	toUpdate := mapset.NewSet()
-
-	configs := map[string]common.ResourceConfig{}
-
-	for _, c := range currentConfigs {
-		currentSet.Add(c.Name)
-		configs[c.Name] = c
-	}
-
-	for _, c := range newConfigs {
-		newSet.Add(c.Name)
-		if old, exists := configs[c.Name]; exists {
-			if !reflect.DeepEqual(old, c) {
-				toUpdate.Add(c.Name)
-				configs[c.Name] = c
-			}
-		} else {
-			configs[c.Name] = c
-		}
-	}
-
-	var finalError error
-
-	toDelete := currentSet.Difference(newSet)
-	toAdd := newSet.Difference(currentSet)
-
-	for _, n := range toDelete.ToSlice() {
-		logrus.Infof("Deleting config %s", n.(string))
-		if err := r.Storage.DeleteConfig(n.(string)); err != nil {
-			logrus.WithError(err).Errorf("failed to delete config %s", n)
-			finalError = multierror.Append(finalError, err)
-		}
-	}
-
-	for _, n := range toAdd.ToSlice() {
-		rc := configs[n.(string)]
-		logrus.Infof("Adding config %s", n.(string))
-		if err := r.Storage.AddConfig(rc); err != nil {
-			logrus.WithError(err).Errorf("failed to create resources %s", n)
-			finalError = multierror.Append(finalError, err)
-		}
-	}
-
-	for _, n := range toUpdate.ToSlice() {
-		rc := configs[n.(string)]
-		logrus.Infof("Updating config %s", n.(string))
-		if err := r.Storage.UpdateConfig(rc); err != nil {
-			logrus.WithError(err).Errorf("failed to update resources %s", n)
-			finalError = multierror.Append(finalError, err)
-		}
-	}
-
-	return finalError
-}
-
-// Boskos resource config will be updated every 10 mins.
-// It will append newly added resources to ranch.Resources,
-// And try to remove newly deleted resources from ranch.Resources.
-// If the newly deleted resource is currently held by a user, the deletion will
-// yield to next update cycle.
-func (r *Ranch) syncResources(data []common.Resource) error {
-	r.resourcesLock.Lock()
-	defer r.resourcesLock.Unlock()
-
-	resources, err := r.Storage.GetResources()
-	if err != nil {
-		logrus.WithError(err).Error("cannot find resources")
-		return err
-	}
-
-	var finalError error
-
-	// delete non-exist resource
-	valid := 0
-	for _, res := range resources {
-		// If currently busy, yield deletion to later cycles.
-		if res.Owner != "" {
-			resources[valid] = res
-			valid++
-			continue
-		}
-		toDelete := true
-		for _, newRes := range data {
-			if res.Name == newRes.Name {
-				resources[valid] = res
-				valid++
-				toDelete = false
-				break
-			}
-		}
-		if toDelete {
-			logrus.Infof("Deleting resource %s", res.Name)
-			for _, name := range res.UserData.LeasedResources {
-				lr, err := r.Storage.GetResource(name)
-				if err != nil {
-					logrus.WithError(err).Errorf("cannot release resource %s for resource to be deleted %s", name, res.Name)
-					return err
-				}
-				lr.State = common.Dirty
-				if err = r.updateResourceAndLeasedResources(lr); err != nil {
-					logrus.WithError(err).Errorf("unable to release resource as dirty")
-				}
-			}
-			if err := r.Storage.DeleteResource(res.Name); err != nil {
-				finalError = multierror.Append(finalError, err)
-				logrus.WithError(err).Errorf("unable to delete resource %s", res.Name)
-			}
-		}
-	}
-	resources = resources[:valid]
-
-	// add new resource
-	for _, p := range data {
-		found := false
-		for idx := range resources {
-			exist := resources[idx]
-			if p.Name == exist.Name {
-				found = true
-				logrus.Infof("Keeping resource %s", p.Name)
-				// If the resource already exists and is not being used, we want to use the latest configuration
-				if exist.Owner == "" {
-					if p.UseConfig != exist.UseConfig || p.Type != exist.Type {
-						exist.UseConfig = p.UseConfig
-						exist.Type = p.Type
-						if err := r.Storage.UpdateResource(exist); err != nil {
-							finalError = multierror.Append(finalError, err)
-						}
-					}
-				}
-
-				break
-			}
-		}
-
-		if !found {
-			if p.State == "" {
-				p.State = common.Free
-			}
-			logrus.Infof("Adding resource %s", p.Name)
-			resources = append(resources, p)
-			if err := r.Storage.AddResource(p); err != nil {
-				logrus.WithError(err).Errorf("unable to add resource %s", p.Name)
-				finalError = multierror.Append(finalError, err)
-			}
-		}
-	}
-	return finalError
 }
 
 // Metric returns a metric object with metrics filled in

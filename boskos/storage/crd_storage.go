@@ -14,12 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package ranch
+package storage
 
 import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/test-infra/boskos/common"
 	"k8s.io/test-infra/boskos/crds"
+)
+
+const (
+	DeleteGracePeriodSeconds = 10
 )
 
 type CRDStorage struct {

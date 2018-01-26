@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package ranch
+package storage
 
 import (
 	"fmt"
@@ -26,10 +26,9 @@ import (
 	"reflect"
 )
 
-func createStorages() []StorageInterface {
-
-	return []StorageInterface{
-		NewCRDStorage(crds.NewDummyClient(crds.ResourcePlural)),
+func createStorages() []Interface {
+	return []Interface{
+		NewCRDStorage(crds.NewDummyClient(crds.ResourceType)),
 		NewMemoryStorage(),
 	}
 }
@@ -44,7 +43,7 @@ func TestAddDelete(t *testing.T) {
 				Type: fmt.Sprintf("type-%d", i),
 			})
 		}
-		sort.Stable(ResourceByName(resources))
+		sort.Stable(common.ResourceByName(resources))
 		for _, res := range resources {
 			if err = s.Add(res); err != nil {
 				t.Errorf("unable to add %s, %v", res.Name, err)
@@ -63,7 +62,7 @@ func TestAddDelete(t *testing.T) {
 			}
 			rResources = append(rResources, r)
 		}
-		sort.Stable(ResourceByName(rResources))
+		sort.Stable(common.ResourceByName(rResources))
 		if !reflect.DeepEqual(resources, rResources) {
 			t.Errorf("received resources (%v) do not match resources (%v)", resources, rResources)
 		}

@@ -18,12 +18,17 @@ package mason
 
 import (
 	"fmt"
+	"reflect"
+	"sort"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/sirupsen/logrus"
+
 	"k8s.io/test-infra/boskos/common"
-	"time"
+	"k8s.io/test-infra/boskos/ranch"
+	"k8s.io/test-infra/boskos/storage"
 )
 
 const (
@@ -35,7 +40,7 @@ const (
 type fakeBoskos struct {
 	lock      sync.Mutex
 	resources map[string]*common.Resource
-	configs   map[string]*common.ResourceConfig
+	configs   map[string]*common.ResourcesConfig
 }
 
 type testConfig map[string]struct {
@@ -46,22 +51,19 @@ type testConfig map[string]struct {
 type fakeConfig struct {
 }
 
-func fakeConfigConverter(in string) (Config, error) {
+func fakeConfigConverter(in string) (Masonable, error) {
 	return &fakeConfig{}, nil
 }
 
-func (fc *fakeConfig) Construct(res *common.Resource, typeToRes common.TypeToResources) (*common.TypedContent, error) {
-	return &common.TypedContent{
-		Type:    fakeInfoType,
-		Content: emptyContent,
-	}, nil
+func (fc *fakeConfig) Construct(res *common.Resource, typeToRes common.TypeToResources) (*common.UserData, error) {
+	return &common.UserData{"fakeConfig": "unused"}, nil
 }
 
 // Create a fake client
 func createFakeBoskos(tc testConfig) *fakeBoskos {
 	fb := &fakeBoskos{}
 	resources := map[string]*common.Resource{}
-	configs := map[string]*common.ResourceConfig{}
+	configs := map[string]*common.ResourcesConfig{}
 
 	for rtype, c := range tc {
 		for i := 0; i < c.count; i++ {
@@ -69,12 +71,12 @@ func createFakeBoskos(tc testConfig) *fakeBoskos {
 				Type:  rtype,
 				Name:  fmt.Sprintf("%s_%d", rtype, i),
 				State: common.Free,
+				UserData: common.UserData{},
 			}
 			if c.resourceNeeds != nil {
-				res.UseConfig = true
 				res.State = common.Dirty
 				if _, ok := configs[rtype]; !ok {
-					configs[rtype] = &common.ResourceConfig{
+					configs[rtype] = &common.ResourcesConfig{
 						Config: common.TypedContent{
 							Type:    fakeConfigType,
 							Content: emptyContent,
@@ -119,21 +121,19 @@ func (fb *fakeBoskos) ReleaseOne(name, dest string) error {
 	return fmt.Errorf("no resource %v", name)
 }
 
-func (fb *fakeBoskos) UpdateOne(name, state string, info *common.ResourceInfo) error {
+func (fb *fakeBoskos) UpdateOne(name, state string, userData *common.UserData) error {
 	fb.lock.Lock()
 	defer fb.lock.Unlock()
 	res, ok := fb.resources[name]
 	if ok {
 		res.State = state
-		if info != nil {
-			res.UserData = *info
-		}
+		res.UserData.Update(userData)
 		return nil
 	}
 	return fmt.Errorf("no resource %v", name)
 }
 
-func (fb *fakeBoskos) GetConfig(name string) (*common.ResourceConfig, error) {
+func (fb *fakeBoskos) GetConfig(name string) (*common.ResourcesConfig, error) {
 	fb.lock.Lock()
 	defer fb.lock.Unlock()
 	config, ok := fb.configs[name]
@@ -159,9 +159,7 @@ func TestRecycleLeasedResources(t *testing.T) {
 
 	bclient := createFakeBoskos(tc)
 	bclient.resources["type1_0"].State = Leased
-	bclient.resources["type2_0"].UserData = common.ResourceInfo{
-		LeasedResources: []string{"type1_0"},
-	}
+	bclient.resources["type2_0"].UserData.Set(LeasedResources, &[]string{"type1_0"})
 	m := NewMason(masonTypes, 1, bclient, time.Millisecond)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.start(m.recycleAll)
@@ -309,4 +307,225 @@ func TestMasonStartStop(t *testing.T) {
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()
 	m.Stop()
+}
+
+func TestConfig(t *testing.T) {
+	resources, err := ranch.ParseConfig("test-resources.yaml")
+	if err != nil {
+		t.Error(err)
+	}
+	configs, err := ParseConfig("test-configs.yaml")
+	if err != nil {
+		t.Error(err)
+	}
+	if err := ValidateConfig(configs, resources); err != nil {
+		t.Error(err)
+	}
+}
+
+func makeFakeConfig(name, cType, content string, needs int) common.ResourcesConfig {
+	c := common.ResourcesConfig{
+		Name:  name,
+		Needs: common.ResourceNeeds{},
+		Config: common.TypedContent{
+			Type:    cType,
+			Content: content,
+		},
+	}
+	for i := 0; i < needs; i++ {
+		c.Needs[fmt.Sprintf("type_%d", i)] = i
+	}
+	return c
+}
+
+func TestSyncConfig(t *testing.T) {
+	var testcases = []struct {
+		name      string
+		oldConfig []common.ResourcesConfig
+		newConfig []common.ResourcesConfig
+		expect    []common.ResourcesConfig
+	}{
+		{
+			name: "empty",
+		},
+		{
+			name: "deleteAll",
+			oldConfig: []common.ResourcesConfig{
+				makeFakeConfig("config1", "fakeType", "", 2),
+				makeFakeConfig("config2", "fakeType", "", 3),
+				makeFakeConfig("config3", "fakeType", "", 4),
+			},
+		},
+		{
+			name: "new",
+			newConfig: []common.ResourcesConfig{
+				makeFakeConfig("config1", "fakeType", "", 2),
+				makeFakeConfig("config2", "fakeType", "", 3),
+				makeFakeConfig("config3", "fakeType", "", 4),
+			},
+			expect: []common.ResourcesConfig{
+				makeFakeConfig("config1", "fakeType", "", 2),
+				makeFakeConfig("config2", "fakeType", "", 3),
+				makeFakeConfig("config3", "fakeType", "", 4),
+			},
+		},
+		{
+			name: "noChange",
+			oldConfig: []common.ResourcesConfig{
+				makeFakeConfig("config1", "fakeType", "", 2),
+				makeFakeConfig("config2", "fakeType", "", 3),
+				makeFakeConfig("config3", "fakeType", "", 4),
+			},
+			newConfig: []common.ResourcesConfig{
+				makeFakeConfig("config1", "fakeType", "", 2),
+				makeFakeConfig("config2", "fakeType", "", 3),
+				makeFakeConfig("config3", "fakeType", "", 4),
+			},
+			expect: []common.ResourcesConfig{
+				makeFakeConfig("config1", "fakeType", "", 2),
+				makeFakeConfig("config2", "fakeType", "", 3),
+				makeFakeConfig("config3", "fakeType", "", 4),
+			},
+		},
+		{
+			name: "update",
+			oldConfig: []common.ResourcesConfig{
+				makeFakeConfig("config1", "fakeType", "", 2),
+				makeFakeConfig("config2", "fakeType", "", 3),
+				makeFakeConfig("config3", "fakeType", "", 4),
+			},
+			newConfig: []common.ResourcesConfig{
+				makeFakeConfig("config1", "fakeType2", "", 2),
+				makeFakeConfig("config2", "fakeType", "something", 3),
+				makeFakeConfig("config3", "fakeType", "", 5),
+			},
+			expect: []common.ResourcesConfig{
+				makeFakeConfig("config1", "fakeType2", "", 2),
+				makeFakeConfig("config2", "fakeType", "something", 3),
+				makeFakeConfig("config3", "fakeType", "", 5),
+			},
+		},
+		{
+			name: "delete",
+			oldConfig: []common.ResourcesConfig{
+				makeFakeConfig("config1", "fakeType", "", 2),
+				makeFakeConfig("config2", "fakeType", "", 3),
+				makeFakeConfig("config3", "fakeType", "", 4),
+			},
+			newConfig: []common.ResourcesConfig{
+				makeFakeConfig("config1", "fakeType2", "", 2),
+				makeFakeConfig("config3", "fakeType", "", 5),
+			},
+			expect: []common.ResourcesConfig{
+				makeFakeConfig("config1", "fakeType2", "", 2),
+				makeFakeConfig("config3", "fakeType", "", 5),
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		s := NewStorage(storage.NewMemoryStorage())
+		s.SyncConfigs(tc.newConfig)
+		configs, err := s.GetConfigs()
+		if err != nil {
+			t.Errorf("failed to get resources")
+			continue
+		}
+		sort.Stable(common.ResourcesConfigByName(configs))
+		sort.Stable(common.ResourcesConfigByName(tc.expect))
+		if !reflect.DeepEqual(configs, tc.expect) {
+			t.Errorf("Test %v: got %v, expect %v", tc.name, configs, tc.expect)
+		}
+	}
+}
+
+func TestGetConfig(t *testing.T) {
+	var testcases = []struct {
+		name, configName string
+		exists           bool
+		configs          []common.ResourcesConfig
+	}{
+		{
+			name:       "exists",
+			exists:     true,
+			configName: "test",
+			configs: []common.ResourcesConfig{
+				{
+					Needs: common.ResourceNeeds{"type1": 1, "type2": 2},
+					Config: common.TypedContent{
+						Type:    "type3",
+						Content: "content",
+					},
+					Name: "test",
+				},
+			},
+		},
+		{
+			name:       "noConfig",
+			exists:     false,
+			configName: "test",
+		},
+		{
+			name:       "existsMultipleConfigs",
+			exists:     true,
+			configName: "test1",
+			configs: []common.ResourcesConfig{
+				{
+					Needs: common.ResourceNeeds{"type1": 1, "type2": 2},
+					Config: common.TypedContent{
+						Type:    "type3",
+						Content: "content",
+					},
+					Name: "test",
+				},
+				{
+					Needs: common.ResourceNeeds{"type1": 1, "type2": 2},
+					Config: common.TypedContent{
+						Type:    "type3",
+						Content: "content",
+					},
+					Name: "test1",
+				},
+			},
+		},
+		{
+			name:       "noExistMultipleConfigs",
+			exists:     false,
+			configName: "test2",
+			configs: []common.ResourcesConfig{
+				{
+					Needs: common.ResourceNeeds{"type1": 1, "type2": 2},
+					Config: common.TypedContent{
+						Type:    "type3",
+						Content: "content",
+					},
+					Name: "test",
+				},
+				{
+					Needs: common.ResourceNeeds{"type1": 1, "type2": 2},
+					Config: common.TypedContent{
+						Type:    "type3",
+						Content: "content",
+					},
+					Name: "test1",
+				},
+			},
+		},
+	}
+	for _, tc := range testcases {
+		s := NewStorage(storage.NewMemoryStorage())
+		for _, config := range tc.configs {
+			s.AddConfig(config)
+		}
+		config, err := s.GetConfig(tc.configName)
+		if !tc.exists {
+			if err == nil {
+				t.Error("client should return an error")
+			}
+		} else {
+			if config.Name != tc.configName {
+				t.Error("config name should match")
+			}
+		}
+	}
 }

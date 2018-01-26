@@ -20,11 +20,11 @@ import (
 	"reflect"
 	"testing"
 
-	"k8s.io/test-infra/boskos/ranch"
+	"k8s.io/test-infra/boskos/mason"
 )
 
 func TestParseConfig(t *testing.T) {
-	expected := ResourceConfig{
+	expected := ResourcesConfig{
 		ProjectConfigs: []ProjectConfig{
 			{
 				Type: "type1",
@@ -53,7 +53,7 @@ func TestParseConfig(t *testing.T) {
 			},
 		},
 	}
-	_, conf, err := ranch.ParseConfig("../test-config.yaml")
+	conf, err := mason.ParseConfig("../mason/test-configs.yaml")
 	if err != nil {
 		t.Error("could not parse config")
 	}

@@ -22,21 +22,16 @@ import (
 	"testing"
 	"time"
 
-	"fmt"
 	"k8s.io/test-infra/boskos/common"
 	"k8s.io/test-infra/boskos/crds"
+	"k8s.io/test-infra/boskos/storage"
 )
 
-func MakeTestRanch(resources []common.Resource, configs []common.ResourceConfig) *Ranch {
-	cs := NewMemoryStorage()
-	//rs := NewMemoryStorage()
-	rs := NewCRDStorage(crds.NewDummyClient(crds.ResourcePlural))
-	s, _ := NewStorage(cs, rs, "")
+func MakeTestRanch(resources []common.Resource) *Ranch {
+	rs := storage.NewCRDStorage(crds.NewDummyClient(crds.ResourceType))
+	s, _ := NewStorage(rs, "")
 	for _, res := range resources {
 		s.AddResource(res)
-	}
-	for _, conf := range configs {
-		s.AddConfig(conf)
 	}
 	r, _ := NewRanch("", s)
 	return r
@@ -83,7 +78,6 @@ func TestAcquire(t *testing.T) {
 	var testcases = []struct {
 		name      string
 		resources []common.Resource
-		configs   []common.ResourceConfig
 		owner     string
 		rtype     string
 		state     string
@@ -102,13 +96,7 @@ func TestAcquire(t *testing.T) {
 		{
 			name: "no match type",
 			resources: []common.Resource{
-				{
-					Name:       "res",
-					Type:       "wrong",
-					State:      "s",
-					Owner:      "",
-					LastUpdate: FakeNow,
-				},
+				common.NewResource("res", "wrong", "s", "", FakeNow),
 			},
 			owner:     "user",
 			rtype:     "t",
@@ -119,13 +107,7 @@ func TestAcquire(t *testing.T) {
 		{
 			name: "no match state",
 			resources: []common.Resource{
-				{
-					Name:       "res",
-					Type:       "t",
-					State:      "wrong",
-					Owner:      "",
-					LastUpdate: FakeNow,
-				},
+				common.NewResource("res","t", "wrong", "",FakeNow),
 			},
 			owner:     "user",
 			rtype:     "t",
@@ -136,13 +118,7 @@ func TestAcquire(t *testing.T) {
 		{
 			name: "busy",
 			resources: []common.Resource{
-				{
-					Name:       "res",
-					Type:       "t",
-					State:      "s",
-					Owner:      "foo",
-					LastUpdate: FakeNow,
-				},
+				common.NewResource("res", "t", "s", "foo",FakeNow),
 			},
 			owner:     "user",
 			rtype:     "t",
@@ -153,13 +129,7 @@ func TestAcquire(t *testing.T) {
 		{
 			name: "ok",
 			resources: []common.Resource{
-				{
-					Name:       "res",
-					Type:       "t",
-					State:      "s",
-					Owner:      "",
-					LastUpdate: FakeNow,
-				},
+				common.NewResource("res", "t", "s", "", FakeNow),
 			},
 			owner:     "user",
 			rtype:     "t",
@@ -170,7 +140,7 @@ func TestAcquire(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		c := MakeTestRanch(tc.resources)
 		res, err := c.Acquire(tc.rtype, tc.state, tc.dest, tc.owner)
 		if !AreErrorsEqual(err, tc.expectErr) {
 			t.Errorf("%s - Got error %v, expect error %v", tc.name, err, tc.expectErr)
@@ -204,40 +174,14 @@ func TestAcquire(t *testing.T) {
 
 func TestAcquireRoundRobin(t *testing.T) {
 	FakeNow := time.Now()
-	resources := []common.Resource{
-		{
-			Name:       "res-1",
-			Type:       "t",
-			State:      "s",
-			Owner:      "",
-			LastUpdate: FakeNow,
-		},
-		{
-			Name:       "res-2",
-			Type:       "t",
-			State:      "s",
-			Owner:      "",
-			LastUpdate: FakeNow,
-		},
-		{
-			Name:       "res-3",
-			Type:       "t",
-			State:      "s",
-			Owner:      "",
-			LastUpdate: FakeNow,
-		},
-		{
-			Name:       "res-4",
-			Type:       "t",
-			State:      "s",
-			Owner:      "",
-			LastUpdate: FakeNow,
-		},
+	var resources []common.Resource
+	for i:=1; i<5; i++ {
+		resources = append(resources, common.NewResource("res-1", "t", "s", "", FakeNow))
 	}
 
 	results := map[string]int{}
 
-	c := MakeTestRanch(resources, []common.ResourceConfig{})
+	c := MakeTestRanch(resources)
 	for i := 0; i < 4; i++ {
 		res, err := c.Acquire("t", "s", "d", "foo")
 		if err != nil {
@@ -256,7 +200,6 @@ func TestRelease(t *testing.T) {
 	var testcases = []struct {
 		name      string
 		resources []common.Resource
-		configs   []common.ResourceConfig
 		resName   string
 		owner     string
 		dest      string
@@ -273,13 +216,7 @@ func TestRelease(t *testing.T) {
 		{
 			name: "wrong owner",
 			resources: []common.Resource{
-				{
-					Name:       "res",
-					Type:       "t",
-					State:      "s",
-					Owner:      "merlin",
-					LastUpdate: FakeNow,
-				},
+				common.NewResource("res","t","s","merlin",FakeNow),
 			},
 			resName:   "res",
 			owner:     "user",
@@ -289,13 +226,7 @@ func TestRelease(t *testing.T) {
 		{
 			name: "no match name",
 			resources: []common.Resource{
-				{
-					Name:       "foo",
-					Type:       "t",
-					State:      "s",
-					Owner:      "merlin",
-					LastUpdate: FakeNow,
-				},
+				common.NewResource("foo","t","s","merlin",FakeNow),
 			},
 			resName:   "res",
 			owner:     "user",
@@ -305,13 +236,7 @@ func TestRelease(t *testing.T) {
 		{
 			name: "ok",
 			resources: []common.Resource{
-				{
-					Name:       "res",
-					Type:       "t",
-					State:      "s",
-					Owner:      "merlin",
-					LastUpdate: FakeNow,
-				},
+				common.NewResource("res","t","s","merlin",FakeNow),
 			},
 			resName:   "res",
 			owner:     "merlin",
@@ -321,7 +246,7 @@ func TestRelease(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		c := MakeTestRanch(tc.resources)
 		err := c.Release(tc.resName, tc.dest, tc.owner)
 		if !AreErrorsEqual(err, tc.expectErr) {
 			t.Errorf("%s - Got error %v, expect error %v", tc.name, err, tc.expectErr)
@@ -366,13 +291,7 @@ func TestReset(t *testing.T) {
 		{
 			name: "empty - has no owner",
 			resources: []common.Resource{
-				{
-					Name:       "res",
-					Type:       "t",
-					State:      "s",
-					Owner:      "",
-					LastUpdate: FakeNow.Add(-time.Minute * 20),
-				},
+				common.NewResource("res","t","s","",FakeNow.Add(-time.Minute * 20)),
 			},
 			rtype:  "t",
 			state:  "s",
@@ -382,13 +301,7 @@ func TestReset(t *testing.T) {
 		{
 			name: "empty - not expire",
 			resources: []common.Resource{
-				{
-					Name:       "res",
-					Type:       "t",
-					State:      "s",
-					Owner:      "",
-					LastUpdate: FakeNow,
-				},
+				common.NewResource("res","t","s","",FakeNow),
 			},
 			rtype:  "t",
 			state:  "s",
@@ -398,13 +311,7 @@ func TestReset(t *testing.T) {
 		{
 			name: "empty - no match type",
 			resources: []common.Resource{
-				{
-					Name:       "res",
-					Type:       "wrong",
-					State:      "s",
-					Owner:      "",
-					LastUpdate: FakeNow.Add(-time.Minute * 20),
-				},
+				common.NewResource("res","wrong","s","",FakeNow.Add(-time.Minute * 20)),
 			},
 			rtype:  "t",
 			state:  "s",
@@ -414,13 +321,7 @@ func TestReset(t *testing.T) {
 		{
 			name: "empty - no match state",
 			resources: []common.Resource{
-				{
-					Name:       "res",
-					Type:       "t",
-					State:      "wrong",
-					Owner:      "",
-					LastUpdate: FakeNow.Add(-time.Minute * 20),
-				},
+				common.NewResource("res","t","wrong","",FakeNow.Add(-time.Minute * 20)),
 			},
 			rtype:  "t",
 			state:  "s",
@@ -430,13 +331,7 @@ func TestReset(t *testing.T) {
 		{
 			name: "ok",
 			resources: []common.Resource{
-				{
-					Name:       "res",
-					Type:       "t",
-					State:      "s",
-					Owner:      "user",
-					LastUpdate: FakeNow.Add(-time.Minute * 20),
-				},
+				common.NewResource("res","t","s","user",FakeNow.Add(-time.Minute * 20)),
 			},
 			rtype:      "t",
 			state:      "s",
@@ -447,7 +342,7 @@ func TestReset(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		c := MakeTestRanch(tc.resources)
 		rmap, err := c.Reset(tc.rtype, tc.state, tc.expire, tc.dest)
 		if err != nil {
 			t.Errorf("failed to reset %v", err)
@@ -495,13 +390,7 @@ func TestUpdate(t *testing.T) {
 		{
 			name: "wrong owner",
 			resources: []common.Resource{
-				{
-					Name:       "res",
-					Type:       "t",
-					State:      "s",
-					Owner:      "merlin",
-					LastUpdate: FakeNow,
-				},
+				common.NewResource("res","t","s", "merlin",FakeNow),
 			},
 			resName:   "res",
 			owner:     "user",
@@ -511,13 +400,7 @@ func TestUpdate(t *testing.T) {
 		{
 			name: "wrong state",
 			resources: []common.Resource{
-				{
-					Name:       "res",
-					Type:       "t",
-					State:      "s",
-					Owner:      "merlin",
-					LastUpdate: FakeNow,
-				},
+				common.NewResource("res", "t", "s", "merlin",FakeNow),
 			},
 			resName:   "res",
 			owner:     "merlin",
@@ -527,13 +410,7 @@ func TestUpdate(t *testing.T) {
 		{
 			name: "no matched resource",
 			resources: []common.Resource{
-				{
-					Name:       "foo",
-					Type:       "t",
-					State:      "s",
-					Owner:      "merlin",
-					LastUpdate: FakeNow,
-				},
+				common.NewResource("foo","t","s","merlin",FakeNow),
 			},
 			resName:   "res",
 			owner:     "merlin",
@@ -543,13 +420,7 @@ func TestUpdate(t *testing.T) {
 		{
 			name: "ok",
 			resources: []common.Resource{
-				{
-					Name:       "res",
-					Type:       "t",
-					State:      "s",
-					Owner:      "merlin",
-					LastUpdate: FakeNow,
-				},
+				common.NewResource("res","t","s","merlin",FakeNow),
 			},
 			resName: "res",
 			owner:   "merlin",
@@ -558,7 +429,7 @@ func TestUpdate(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		c := MakeTestRanch(tc.resources)
 		err := c.Update(tc.resName, tc.owner, tc.state, nil)
 		if !AreErrorsEqual(err, tc.expectErr) {
 			t.Errorf("%s - Got error %v, expect error %v", tc.name, err, tc.expectErr)
@@ -606,12 +477,7 @@ func TestMetric(t *testing.T) {
 		{
 			name: "no matching resource",
 			resources: []common.Resource{
-				{
-					Name:  "res",
-					Type:  "t",
-					State: "s",
-					Owner: "merlin",
-				},
+				common.NewResource("res","t","s","merlin", time.Now()),
 			},
 			metricType: "foo",
 			expectErr:  &ResourceNotFound{"foo"},
@@ -619,12 +485,7 @@ func TestMetric(t *testing.T) {
 		{
 			name: "one resource",
 			resources: []common.Resource{
-				{
-					Name:  "res",
-					Type:  "t",
-					State: "s",
-					Owner: "merlin",
-				},
+				common.NewResource("res","t","s","merlin", time.Now()),
 			},
 			metricType: "t",
 			expectMetric: common.Metric{
@@ -640,36 +501,11 @@ func TestMetric(t *testing.T) {
 		{
 			name: "multiple resources",
 			resources: []common.Resource{
-				{
-					Name:  "res-1",
-					Type:  "t",
-					State: "s",
-					Owner: "merlin",
-				},
-				{
-					Name:  "res-2",
-					Type:  "t",
-					State: "p",
-					Owner: "pony",
-				},
-				{
-					Name:  "res-3",
-					Type:  "t",
-					State: "s",
-					Owner: "pony",
-				},
-				{
-					Name:  "res-4",
-					Type:  "foo",
-					State: "s",
-					Owner: "pony",
-				},
-				{
-					Name:  "res-5",
-					Type:  "t",
-					State: "d",
-					Owner: "merlin",
-				},
+				common.NewResource("res-1","t","s", "merlin", time.Now()),
+				common.NewResource("res-2","t","p", "pony", time.Now()),
+				common.NewResource("res-3","t","s","pony", time.Now()),
+				common.NewResource("res-4", "foo", "s", "pony", time.Now()),
+				common.NewResource("res-5","t","d", "merlin", time.Now()),
 			},
 			metricType: "t",
 			expectMetric: common.Metric{
@@ -688,7 +524,7 @@ func TestMetric(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		c := MakeTestRanch(tc.resources)
 		metric, err := c.Metric(tc.metricType)
 		if !AreErrorsEqual(err, tc.expectErr) {
 			t.Errorf("%s - Got error %v, expect error %v", tc.name, err, tc.expectErr)
@@ -704,6 +540,7 @@ func TestMetric(t *testing.T) {
 }
 
 func TestSyncResources(t *testing.T) {
+	fakeNow := time.Now()
 	var testcases = []struct {
 		name   string
 		oldRes []common.Resource
@@ -716,283 +553,92 @@ func TestSyncResources(t *testing.T) {
 		{
 			name: "append",
 			newRes: []common.Resource{
-				{
-					Name: "res",
-					Type: "t",
-				},
+				common.NewResource("res","t","", "", fakeNow),
 			},
 			expect: []common.Resource{
-				{
-					Name:  "res",
-					Type:  "t",
-					State: "free",
-				},
+				common.NewResource("res", "t","free","", fakeNow),
 			},
 		},
 		{
 			name: "should not have a type change",
 			oldRes: []common.Resource{
-				{
-					Owner: "rob",
-					Name:  "res",
-					Type:  "t",
-				},
+				common.NewResource("rob","res","t","", time.Now()),
 			},
 			newRes: []common.Resource{
-				{
-					Name: "res",
-					Type: "d",
-				},
+				common.NewResource("res","d","","",time.Now()),
 			},
 			expect: []common.Resource{
-				{
-					Owner: "rob",
-					Name:  "res",
-					Type:  "t",
-				},
+				common.NewResource("rob","res","t","",time.Now()),
 			},
 		},
 		{
 			name: "delete",
 			oldRes: []common.Resource{
-				{
-					Name: "res",
-					Type: "t",
-				},
+				common.NewResource("res","t","","",time.Now()),
 			},
 		},
 		{
 			name: "delete busy",
 			oldRes: []common.Resource{
-				{
-					Name:  "res",
-					Type:  "t",
-					State: "busy",
-					Owner: "o",
-				},
+				common.NewResource("res","t","busy","o",time.Now()),
 			},
 			expect: []common.Resource{
-				{
-					Name:  "res",
-					Type:  "t",
-					State: "busy",
-					Owner: "o",
-				},
+				common.NewResource("res","t","busy","o",time.Now()),
 			},
 		},
 		{
 			name: "append and delete",
 			oldRes: []common.Resource{
-				{
-					Name: "res-1",
-					Type: "t",
-				},
+				common.NewResource("res-1","t","","",time.Now()),
 			},
 			newRes: []common.Resource{
-				{
-					Name: "res-2",
-					Type: "t",
-				},
+				common.NewResource("res-2","t","","",time.Now()),
 			},
 			expect: []common.Resource{
-				{
-					Name:  "res-2",
-					Type:  "t",
-					State: "free",
-				},
+				common.NewResource("res-2","t","free","",time.Now()),
 			},
 		},
 		{
 			name: "append and delete busy",
 			oldRes: []common.Resource{
-				{
-					Name:  "res-1",
-					Type:  "t",
-					State: "busy",
-					Owner: "o",
-				},
+				common.NewResource("res-1","t","busy","o",time.Now()),
 			},
 			newRes: []common.Resource{
-				{
-					Name: "res-2",
-					Type: "t",
-				},
+				common.NewResource("res-2","t","","",time.Now()),
 			},
 			expect: []common.Resource{
-				{
-					Name:  "res-1",
-					Type:  "t",
-					State: "busy",
-					Owner: "o",
-				},
-				{
-					Name:  "res-2",
-					Type:  "t",
-					State: "free",
-				},
+				common.NewResource("res-1","t","busy","o",time.Now()),
+				common.NewResource("res-2","t","free","",time.Now()),
 			},
 		},
 		{
 			name: "append/delete mixed type",
 			oldRes: []common.Resource{
-				{
-					Name: "res-1",
-					Type: "t",
-				},
+				common.NewResource("res-1", "t", "", "", time.Now()),
 			},
 			newRes: []common.Resource{
-				{
-					Name: "res-2",
-					Type: "t",
-				},
-				{
-					Name: "res-3",
-					Type: "t2",
-				},
+				common.NewResource("res-2", "t", "", "", time.Now()),
+				common.NewResource("res-3", "t2", "", "", time.Now()),
 			},
 			expect: []common.Resource{
-				{
-					Name:  "res-2",
-					Type:  "t",
-					State: "free",
-				},
-				{
-					Name:  "res-3",
-					Type:  "t2",
-					State: "free",
-				},
+				common.NewResource("res-2", "t", "free", "", time.Now()),
+				common.NewResource("res-3", "t2", "free", "", time.Now()),
 			},
 		},
 	}
 
 	for _, tc := range testcases {
-		c := MakeTestRanch(tc.oldRes, nil)
-		c.syncResources(tc.newRes)
+		c := MakeTestRanch(tc.oldRes)
+		c.Storage.SyncResources(tc.newRes)
 		resources, err := c.Storage.GetResources()
 		if err != nil {
 			t.Errorf("failed to get resources")
 			continue
 		}
-		sort.Stable(ResourceByName(resources))
-		sort.Stable(ResourceByName(tc.expect))
+		sort.Stable(common.ResourceByName(resources))
+		sort.Stable(common.ResourceByName(tc.expect))
 		if !reflect.DeepEqual(resources, tc.expect) {
 			t.Errorf("Test %v: got %v, expect %v", tc.name, resources, tc.expect)
-		}
-	}
-}
-
-func fakeConfig(name, cType, content string, needs int) common.ResourceConfig {
-	c := common.ResourceConfig{
-		Name:  name,
-		Needs: common.ResourceNeeds{},
-		Config: common.TypedContent{
-			Type:    cType,
-			Content: content,
-		},
-	}
-	for i := 0; i < needs; i++ {
-		c.Needs[fmt.Sprintf("type_%d", i)] = i
-	}
-	return c
-}
-
-func TestSyncConfig(t *testing.T) {
-	var testcases = []struct {
-		name      string
-		oldConfig []common.ResourceConfig
-		newConfig []common.ResourceConfig
-		expect    []common.ResourceConfig
-	}{
-		{
-			name: "empty",
-		},
-		{
-			name: "deleteAll",
-			oldConfig: []common.ResourceConfig{
-				fakeConfig("config1", "fakeType", "", 2),
-				fakeConfig("config2", "fakeType", "", 3),
-				fakeConfig("config3", "fakeType", "", 4),
-			},
-		},
-		{
-			name: "new",
-			newConfig: []common.ResourceConfig{
-				fakeConfig("config1", "fakeType", "", 2),
-				fakeConfig("config2", "fakeType", "", 3),
-				fakeConfig("config3", "fakeType", "", 4),
-			},
-			expect: []common.ResourceConfig{
-				fakeConfig("config1", "fakeType", "", 2),
-				fakeConfig("config2", "fakeType", "", 3),
-				fakeConfig("config3", "fakeType", "", 4),
-			},
-		},
-		{
-			name: "noChange",
-			oldConfig: []common.ResourceConfig{
-				fakeConfig("config1", "fakeType", "", 2),
-				fakeConfig("config2", "fakeType", "", 3),
-				fakeConfig("config3", "fakeType", "", 4),
-			},
-			newConfig: []common.ResourceConfig{
-				fakeConfig("config1", "fakeType", "", 2),
-				fakeConfig("config2", "fakeType", "", 3),
-				fakeConfig("config3", "fakeType", "", 4),
-			},
-			expect: []common.ResourceConfig{
-				fakeConfig("config1", "fakeType", "", 2),
-				fakeConfig("config2", "fakeType", "", 3),
-				fakeConfig("config3", "fakeType", "", 4),
-			},
-		},
-		{
-			name: "update",
-			oldConfig: []common.ResourceConfig{
-				fakeConfig("config1", "fakeType", "", 2),
-				fakeConfig("config2", "fakeType", "", 3),
-				fakeConfig("config3", "fakeType", "", 4),
-			},
-			newConfig: []common.ResourceConfig{
-				fakeConfig("config1", "fakeType2", "", 2),
-				fakeConfig("config2", "fakeType", "something", 3),
-				fakeConfig("config3", "fakeType", "", 5),
-			},
-			expect: []common.ResourceConfig{
-				fakeConfig("config1", "fakeType2", "", 2),
-				fakeConfig("config2", "fakeType", "something", 3),
-				fakeConfig("config3", "fakeType", "", 5),
-			},
-		},
-		{
-			name: "delete",
-			oldConfig: []common.ResourceConfig{
-				fakeConfig("config1", "fakeType", "", 2),
-				fakeConfig("config2", "fakeType", "", 3),
-				fakeConfig("config3", "fakeType", "", 4),
-			},
-			newConfig: []common.ResourceConfig{
-				fakeConfig("config1", "fakeType2", "", 2),
-				fakeConfig("config3", "fakeType", "", 5),
-			},
-			expect: []common.ResourceConfig{
-				fakeConfig("config1", "fakeType2", "", 2),
-				fakeConfig("config3", "fakeType", "", 5),
-			},
-		},
-	}
-
-	for _, tc := range testcases {
-		c := MakeTestRanch(nil, tc.oldConfig)
-		c.syncConfigs(tc.newConfig)
-		configs, err := c.Storage.GetConfigs()
-		if err != nil {
-			t.Errorf("failed to get resources")
-			continue
-		}
-		sort.Stable(ConfigByName(configs))
-		sort.Stable(ConfigByName(tc.expect))
-		if !reflect.DeepEqual(configs, tc.expect) {
-			t.Errorf("Test %v: got %v, expect %v", tc.name, configs, tc.expect)
 		}
 	}
 }

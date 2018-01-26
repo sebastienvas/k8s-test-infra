@@ -20,6 +20,8 @@ import (
 	"flag"
 	"fmt"
 
+	"k8s.io/test-infra/boskos/common"
+
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -41,8 +43,27 @@ var (
 	namespace  = flag.String("namespace", v1.NamespaceDefault, "namespace to install on")
 )
 
+type Type struct {
+	Kind, Plural string
+	Object       Object
+	Collection   Collection
+}
+
+type Object interface {
+	runtime.Object
+	GetName() string
+	FromItem(item common.Item)
+	ToItem() common.Item
+}
+
+type Collection interface {
+	runtime.Object
+	SetItems([]Object)
+	GetItems() []Object
+}
+
 // CreateRESTConfig for cluster API server, pass empty config file for in-cluster
-func CreateRESTConfig(kubeconfig string) (config *rest.Config, types *runtime.Scheme, err error) {
+func CreateRESTConfig(kubeconfig string, t Type) (config *rest.Config, types *runtime.Scheme, err error) {
 	if kubeconfig == "" {
 		config, err = rest.InClusterConfig()
 	} else {
@@ -65,9 +86,7 @@ func CreateRESTConfig(kubeconfig string) (config *rest.Config, types *runtime.Sc
 	types = runtime.NewScheme()
 	schemeBuilder := runtime.NewSchemeBuilder(
 		func(scheme *runtime.Scheme) error {
-			for _, kind := range knownTypes {
-				scheme.AddKnownTypes(version, kind.object, kind.collection)
-			}
+			scheme.AddKnownTypes(version, t.Object, t.Collection)
 			v1.AddToGroupVersion(scheme, version)
 			return nil
 		})
@@ -104,30 +123,26 @@ func RegisterResource(config *rest.Config, kind, plural string) error {
 	return nil
 }
 
-func NewClient(cl *rest.RESTClient, scheme *runtime.Scheme, namespace, plural string) Client {
-	return Client{cl: cl, ns: namespace, plural: plural,
+func NewClient(cl *rest.RESTClient, scheme *runtime.Scheme, namespace string, t Type) Client {
+	return Client{cl: cl, ns: namespace, t: t,
 		codec: runtime.NewParameterCodec(scheme)}
 }
 
-func NewDummyClient(plural string) *DummyClient {
+func NewDummyClient(t Type) *DummyClient {
 	c := &DummyClient{
-		plural:  plural,
+		t:       t,
 		objects: make(map[string]Object),
 	}
 	return c
 }
 
-func NewResourceClient() (*Client, error) {
-	return NewClientFromFlag(ResourceKind, ResourcePlural)
-}
-
-func NewClientFromFlag(kind, plural string) (*Client, error) {
-	config, scheme, err := CreateRESTConfig(*kubeConfig)
+func NewClientFromFlag(t Type) (*Client, error) {
+	config, scheme, err := CreateRESTConfig(*kubeConfig, t)
 	if err != nil {
 		return nil, err
 	}
 
-	if err = RegisterResource(config, kind, plural); err != nil {
+	if err = RegisterResource(config, t.Kind, t.Plural); err != nil {
 		return nil, err
 	}
 	// creates the client
@@ -136,7 +151,7 @@ func NewClientFromFlag(kind, plural string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	rc := NewClient(restClient, scheme, *namespace, plural)
+	rc := NewClient(restClient, scheme, *namespace, t)
 	return &rc, nil
 }
 
@@ -152,15 +167,15 @@ type ClientInterface interface {
 
 type DummyClient struct {
 	objects map[string]Object
-	plural  string
+	t       Type
 }
 
 func (c *DummyClient) NewObject() Object {
-	return knownTypes[c.plural].object.DeepCopyObject().(Object)
+	return c.t.Object.DeepCopyObject().(Object)
 }
 
 func (c *DummyClient) NewCollection() Collection {
-	return knownTypes[c.plural].collection.DeepCopyObject().(Collection)
+	return c.t.Collection.DeepCopyObject().(Collection)
 }
 
 func (c *DummyClient) Create(obj Object) (Object, error) {
@@ -207,16 +222,17 @@ func (c *DummyClient) List(opts v1.ListOptions) (Collection, error) {
 type Client struct {
 	cl     *rest.RESTClient
 	ns     string
+	t      Type
 	plural string
 	codec  runtime.ParameterCodec
 }
 
 func (c *Client) NewObject() Object {
-	return knownTypes[c.plural].object.DeepCopyObject().(Object)
+	return c.t.Object.DeepCopyObject().(Object)
 }
 
 func (c *Client) NewCollection() Collection {
-	return knownTypes[c.plural].collection.DeepCopyObject().(Collection)
+	return c.t.Collection.DeepCopyObject().(Collection)
 }
 
 func (c *Client) Create(obj Object) (Object, error) {

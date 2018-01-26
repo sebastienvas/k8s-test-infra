@@ -132,13 +132,13 @@ func (c *Client) UpdateAll(state string) error {
 }
 
 // UpdateOne signals update for one of the resource hold by the client.
-func (c *Client) UpdateOne(name string, state string, info *common.ResourceInfo) error {
+func (c *Client) UpdateOne(name, state string, userData *common.UserData) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
 	for _, r := range c.resources {
 		if r == name {
-			err := c.update(r, state, info)
+			err := c.update(r, state, userData)
 			return err
 		}
 	}
@@ -146,14 +146,9 @@ func (c *Client) UpdateOne(name string, state string, info *common.ResourceInfo)
 	return fmt.Errorf("no resource name %v", name)
 }
 
-// UpdateOne signals update for one of the resource hold by the client.
-func (c *Client) GetConfig(name string) (*common.ResourceConfig, error) {
-	return c.getConfig(name)
-}
-
 // Reset will scan all boskos resources of type, in state, last updated before expire, and set them to dest state.
 // Returns a map of {resourceName:owner} for further actions.
-func (c *Client) Reset(rtype string, state string, expire time.Duration, dest string) (map[string]string, error) {
+func (c *Client) Reset(rtype, state string, expire time.Duration, dest string) (map[string]string, error) {
 	return c.reset(rtype, state, expire, dest)
 }
 
@@ -183,7 +178,7 @@ func (c *Client) popResource() (string, bool) {
 	return r, true
 }
 
-func (c *Client) acquire(rtype string, state string, dest string) (*common.Resource, error) {
+func (c *Client) acquire(rtype, state, dest string) (*common.Resource, error) {
 	resp, err := http.Post(fmt.Sprintf("%v/acquire?type=%v&state=%v&dest=%v&owner=%v", c.url, rtype, state, dest, c.owner), "", nil)
 	if err != nil {
 		return nil, err
@@ -211,7 +206,7 @@ func (c *Client) acquire(rtype string, state string, dest string) (*common.Resou
 	return nil, fmt.Errorf("status %s, status code %v", resp.Status, resp.StatusCode)
 }
 
-func (c *Client) release(name string, dest string) error {
+func (c *Client) release(name, dest string) error {
 	resp, err := http.Post(fmt.Sprintf("%v/release?name=%v&dest=%v&owner=%v", c.url, name, dest, c.owner), "", nil)
 	if err != nil {
 		return err
@@ -224,32 +219,9 @@ func (c *Client) release(name string, dest string) error {
 	return nil
 }
 
-func (c *Client) getConfig(name string) (*common.ResourceConfig, error) {
-	resp, err := http.Post(fmt.Sprintf("%v/getconfig?name=%v", c.url, name), "", nil)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("status %s, status code %v", resp.Status, resp.StatusCode)
-	}
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var config = new(common.ResourceConfig)
-	err = json.Unmarshal(body, &config)
-	if err != nil {
-		return nil, err
-	}
-	return config, nil
-}
-
-func (c *Client) update(name string, state string, info *common.ResourceInfo) error {
+func (c *Client) update(name, state string, userData *common.UserData) error {
 	b := new(bytes.Buffer)
-	err := json.NewEncoder(b).Encode(info)
+	err := json.NewEncoder(b).Encode(userData)
 	if err != nil {
 		return err
 	}
@@ -265,7 +237,7 @@ func (c *Client) update(name string, state string, info *common.ResourceInfo) er
 	return nil
 }
 
-func (c *Client) reset(rtype string, state string, expire time.Duration, dest string) (map[string]string, error) {
+func (c *Client) reset(rtype, state string, expire time.Duration, dest string) (map[string]string, error) {
 	rmap := make(map[string]string)
 	resp, err := http.Post(fmt.Sprintf("%v/reset?type=%v&state=%v&expire=%v&dest=%v", c.url, rtype, state, expire.String(), dest), "", nil)
 	if err != nil {

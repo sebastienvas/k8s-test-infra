@@ -27,18 +27,15 @@ import (
 
 	"k8s.io/test-infra/boskos/common"
 	"k8s.io/test-infra/boskos/crds"
-	"k8s.io/test-infra/boskos/gcp"
 	"k8s.io/test-infra/boskos/ranch"
+	"k8s.io/test-infra/boskos/storage"
 )
 
-func MakeTestRanch(resources []common.Resource, configs []common.ResourceConfig) *ranch.Ranch {
-	resourceClient := crds.NewDummyClient(crds.ResourcePlural)
-	s, _ := ranch.NewStorage(ranch.NewMemoryStorage(), ranch.NewCRDStorage(resourceClient), "")
+func MakeTestRanch(resources []common.Resource) *ranch.Ranch {
+	resourceClient := crds.NewDummyClient(crds.ResourceType)
+	s, _ := ranch.NewStorage(storage.NewCRDStorage(resourceClient), "")
 	for _, r := range resources {
 		s.AddResource(r)
-	}
-	for _, c := range configs {
-		s.AddConfig(c)
 	}
 	r, _ := ranch.NewRanch("", s)
 	return r
@@ -160,7 +157,7 @@ func TestAcquire(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		c := MakeTestRanch(tc.resources)
 		handler := handleAcquire(c)
 		req, err := http.NewRequest(tc.method, "", nil)
 		if err != nil {
@@ -295,7 +292,7 @@ func TestRelease(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		c := MakeTestRanch(tc.resources)
 		handler := handleRelease(c)
 		req, err := http.NewRequest(tc.method, "", nil)
 		if err != nil {
@@ -466,7 +463,7 @@ func TestReset(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		c := MakeTestRanch(tc.resources)
 		handler := handleReset(c)
 		req, err := http.NewRequest(tc.method, "", nil)
 		if err != nil {
@@ -626,7 +623,7 @@ func TestUpdate(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		c := MakeTestRanch(tc.resources)
 		handler := handleUpdate(c)
 		req, err := http.NewRequest(tc.method, "", nil)
 		if err != nil {
@@ -727,7 +724,7 @@ func TestGetMetric(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		c := MakeTestRanch(tc.resources, []common.ResourceConfig{})
+		c := MakeTestRanch(tc.resources)
 		handler := handleMetric(c)
 		req, err := http.NewRequest(tc.method, "", nil)
 		if err != nil {
@@ -782,7 +779,7 @@ func TestDefault(t *testing.T) {
 }
 
 func TestConfig(t *testing.T) {
-	resources, configs, err := ranch.ParseConfig("config.yaml")
+	resources, err := ranch.ParseConfig("config.yaml")
 	if err != nil {
 		t.Errorf("parseConfig error: %v", err)
 	}
@@ -790,20 +787,7 @@ func TestConfig(t *testing.T) {
 	if len(resources) == 0 {
 		t.Errorf("empty data")
 	}
-	configNames := map[string]bool{}
 	resourceNames := map[string]bool{}
-
-	for _, p := range configs {
-		if p.Name == "" {
-			t.Errorf("empty config name: %v", p.Name)
-		}
-
-		if _, ok := configNames[p.Name]; ok {
-			t.Errorf("duplicated config name: %v", p.Name)
-		} else {
-			configNames[p.Name] = true
-		}
-	}
 
 	for _, p := range resources {
 		if p.Name == "" {
@@ -814,30 +798,6 @@ func TestConfig(t *testing.T) {
 			t.Errorf("duplicated resource name: %v", p.Name)
 		} else {
 			resourceNames[p.Name] = true
-		}
-	}
-}
-
-func TestParseConfig(t *testing.T) {
-	resources, configs, err := ranch.ParseConfig("test-config.yaml")
-	if err != nil {
-		t.Errorf("parseConfig error: %v", err)
-	}
-
-	if len(resources) == 0 {
-		t.Errorf("empty resources")
-	}
-
-	if len(configs) == 0 {
-		t.Errorf("empty configs")
-	}
-
-	for _, c := range configs {
-		switch c.Config.Type {
-		case gcp.ResourceConfigType:
-			if _, err := gcp.ConfigConverter(c.Config.Content); err != nil {
-				t.Error(err)
-			}
 		}
 	}
 }

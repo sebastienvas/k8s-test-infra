@@ -44,7 +44,6 @@ var (
 
 const (
 	ResourceConfigType = "GCPResourceConfig"
-	done               = "DONE"
 	persistent         = "PERSISTENT"
 	oneToOneNAT        = "ONE_TO_ONE_NAT"
 )
@@ -71,7 +70,7 @@ type ProjectConfig struct {
 	Vms      []GCEVMConfig      `json:"vms,omitempty"`
 }
 
-type ResourceConfig struct {
+type ResourcesConfig struct {
 	ProjectConfigs []ProjectConfig `json:"projectconfigs,omitempty"`
 }
 
@@ -94,8 +93,7 @@ type client struct {
 	gceService *compute.Service
 }
 
-func (rc *ResourceConfig) Construct(res *common.Resource, types common.TypeToResources) (*common.TypedContent, error) {
-	typedContent := common.TypedContent{Type: ResourceConfigType}
+func (rc *ResourcesConfig) Construct(res *common.Resource, types common.TypeToResources) (*common.UserData, error) {
 	info := ResourceInfo{}
 	var err error
 
@@ -106,7 +104,7 @@ func (rc *ResourceConfig) Construct(res *common.Resource, types common.TypeToRes
 	// Copy
 	typesCopy := types
 
-	popProject := func(rType string)  (*common.Resource) {
+	popProject := func(rType string) *common.Resource {
 		var r *common.Resource
 		if len(typesCopy[rType]) >= 1 {
 			r = typesCopy[rType][0]
@@ -148,17 +146,20 @@ func (rc *ResourceConfig) Construct(res *common.Resource, types common.TypeToRes
 		}
 		info.ProjectsInfo = append(info.ProjectsInfo, projectInfo)
 	}
-
-	typedContent.Content, err = info.ToString()
-	return &typedContent, err
+	userData := common.UserData{}
+	if err := userData.Set(ResourceConfigType, &info); err != nil {
+		logrus.WithError(err).Errorf("unable to set %s user data", ResourceConfigType)
+		return nil, err
+	}
+	return &userData, nil
 }
 
-func (rc *ResourceConfig) GetName() string {
+func (rc *ResourcesConfig) GetName() string {
 	return ResourceConfigType
 }
 
-func configConverter(in string) (*ResourceConfig, error) {
-	var config ResourceConfig
+func configConverter(in string) (*ResourcesConfig, error) {
+	var config ResourcesConfig
 	if err := yaml.Unmarshal([]byte(in), &config); err != nil {
 		logrus.WithError(err).Errorf("unable to parse %s", in)
 		return nil, err
@@ -166,7 +167,7 @@ func configConverter(in string) (*ResourceConfig, error) {
 	return &config, nil
 }
 
-func ConfigConverter(in string) (mason.Config, error) {
+func ConfigConverter(in string) (mason.Masonable, error) {
 	return configConverter(in)
 }
 

@@ -17,6 +17,7 @@ limitations under the License.
 package common
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -28,19 +29,10 @@ const (
 	Free  = "free"
 )
 
-// ResourceNeeds maps the type to count of resources types needed
-type ResourceNeeds map[string]int
+// UserData is a map of Name to user defined interface, serialized into a string
+type UserData map[string]string
 
-
-// TypeToResources stores all the leased resources with the same type f
-type TypeToResources map[string][]*Resource
-
-type TypedContent struct {
-	// Identifier of the struct this maps back to
-	Type string `json:"type,omitempty"`
-	// Marshaled JSON content
-	Content string `json:"content,omitempty"`
-}
+type LeasedResources []string
 
 // Item interfaces for resources and configs
 type Item interface {
@@ -53,34 +45,19 @@ type Resource struct {
 	State      string    `json:"state"`
 	Owner      string    `json:"owner"`
 	LastUpdate time.Time `json:"lastupdate"`
-	// Tell whether to use a config or not
-	UseConfig bool `json:"useconfig,omitempty"`
 	// Information on how to use the resource
-	UserData ResourceInfo `json:"info,omitempty"`
-}
-
-type ResourceInfo struct {
-	LeasedResources []string     `json:"leasedresouces,omitempty"`
-	Info            TypedContent `json:"info,omitempty"`
+	UserData UserData `json:"userdata,omitempty"`
 }
 
 // ResourceEntry is resource config format defined from config.yaml
 type ResourceEntry struct {
 	Type      string   `json:"type"`
 	State     string   `json:"state"`
-	UseConfig bool     `json:"useconfig"`
 	Names     []string `json:"names,flow"`
 }
 
-type ResourceConfig struct {
-	Name   string        `json:"name"`
-	Config TypedContent  `json:"config"`
-	Needs  ResourceNeeds `json:"needs"`
-}
-
 type BoskosConfig struct {
-	Resources []ResourceEntry  `json:"resources,flow"`
-	Configs   []ResourceConfig `json:"configs,flow,omitempty"`
+	Resources []ResourceEntry `json:"resources,flow"`
 }
 
 type Metric struct {
@@ -89,6 +66,37 @@ type Metric struct {
 	Owners  map[string]int `json:"owner"`
 	// TODO: Implement state transition metrics
 }
+
+func NewResource(name, rtype, state, owner string, t time.Time) Resource {
+	return Resource{
+		Name:       name,
+		Type:       rtype,
+		State:      state,
+		Owner:      owner,
+		LastUpdate: t,
+		UserData:   UserData{},
+	}
+}
+
+func NewResourcesFromConfig(e ResourceEntry) []Resource {
+	var resources []Resource
+	for _, name := range e.Names {
+		resources = append(resources, NewResource(name, e.Type, e.State, "", time.))
+	}
+	return resources
+}
+
+type ResourceByUpdateTime []Resource
+
+func (ut ResourceByUpdateTime) Len() int           { return len(ut) }
+func (ut ResourceByUpdateTime) Swap(i, j int)      { ut[i], ut[j] = ut[j], ut[i] }
+func (ut ResourceByUpdateTime) Less(i, j int) bool { return ut[i].LastUpdate.Before(ut[j].LastUpdate) }
+
+type ResourceByName []Resource
+
+func (ut ResourceByName) Len() int           { return len(ut) }
+func (ut ResourceByName) Swap(i, j int)      { ut[i], ut[j] = ut[j], ut[i] }
+func (ut ResourceByName) Less(i, j int) bool { return ut[i].GetName() < ut[j].GetName() }
 
 type ResTypes []string
 
@@ -106,8 +114,36 @@ func (r *ResTypes) Set(value string) error {
 	return nil
 }
 
-func (res Resource) GetName() string        { return res.Name }
-func (conf ResourceConfig) GetName() string { return conf.Name }
+func (res Resource) GetName() string { return res.Name }
+
+func (ud UserData) Extract(id string, out interface{}) error {
+	content, ok := ud[id]
+	if !ok {
+		return fmt.Errorf("UserData for id %s cannot be found", id)
+	}
+	return json.Unmarshal([]byte(content), out)
+}
+
+func (ud UserData) Set(id string, in interface{}) error {
+	b, err := json.Marshal(in)
+	if err != nil {
+		return err
+	}
+	ud[id] = string(b)
+	return nil
+}
+
+func (ud UserData) Update(new *UserData) {
+	if new != nil {
+		for id, content := range *new {
+			if content != "" {
+				ud[id] = content
+			} else {
+				delete(ud, id)
+			}
+		}
+	}
+}
 
 func ItemToResource(i interface{}) (Resource, error) {
 	res, ok := i.(Resource)
@@ -115,12 +151,4 @@ func ItemToResource(i interface{}) (Resource, error) {
 		return Resource{}, fmt.Errorf("cannot construct Resource from received object %v", i)
 	}
 	return res, nil
-}
-
-func ItemToResourceConfig(i interface{}) (ResourceConfig, error) {
-	conf, ok := i.(ResourceConfig)
-	if !ok {
-		return ResourceConfig{}, fmt.Errorf("cannot construct Resource from received object %v", i)
-	}
-	return conf, nil
 }

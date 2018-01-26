@@ -19,6 +19,8 @@ package mason
 import (
 	"flag"
 	"fmt"
+	"gopkg.in/yaml.v2"
+	"io/ioutil"
 	"sync"
 	"time"
 
@@ -32,6 +34,7 @@ const (
 	Leased           = "leased"
 	Owner            = "Mason"
 	DefaultSleepTime = 10 * time.Second
+	LeasedResources  = "LEASED_RESOURCES"
 )
 
 var (
@@ -43,29 +46,29 @@ func init() {
 	flag.Var(&rTypes, "resource-types", "comma-separated list of resources need to be cleaned up")
 }
 
-// Config should be implemented by all configurations
-type Config interface {
-	Construct(*common.Resource, common.TypeToResources) (*common.TypedContent, error)
+// Masonable should be implemented by all configurations
+type Masonable interface {
+	Construct(*common.Resource, common.TypeToResources) (*common.UserData, error)
 }
 
-type ConfigConverter func(string) (Config, error)
+type ConfigConverter func(string) (Masonable, error)
 
 type boskosClient interface {
 	Acquire(rtype, state, dest string) (*common.Resource, error)
 	ReleaseOne(name, dest string) error
-	UpdateOne(name, state string, info *common.ResourceInfo) error
-	GetConfig(name string) (*common.ResourceConfig, error)
+	UpdateOne(name, state string, userData *common.UserData) error
 }
 
 type Mason struct {
 	client                      boskosClient
+	storage                     Storage
 	pending, fulfilled, cleaned chan Requirement
 	typesToClean                []string
 	sleepTime                   time.Duration
 	wg                          sync.WaitGroup
 	quit                        chan bool
 	configConverters            map[string]ConfigConverter
-	shutdown bool
+	shutdown                    bool
 }
 
 type Requirement struct {
@@ -85,6 +88,66 @@ func (r Requirement) IsFulFilled() bool {
 		}
 	}
 	return true
+}
+
+func ParseConfig(configPath string) ([]common.ResourcesConfig, error) {
+	file, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var data common.MasonConfig
+	err = yaml.Unmarshal(file, &data)
+	if err != nil {
+		return nil, err
+	}
+	return data.Configs, nil
+}
+
+func ValidateConfig(configs []common.ResourcesConfig, resources []common.Resource) error {
+	resourcesNeeds := map[string]int{}
+	actualResources := map[string]int{}
+
+	configNames := map[string]map[string]int{}
+	for _, c := range configs {
+		_, alreadyExists := configNames[c.Name]
+		if alreadyExists {
+			return fmt.Errorf("config %s already exists", c.Name)
+		}
+		configNames[c.Name] = c.Needs
+	}
+
+	for _, res := range resources {
+		_, useConfig := configNames[res.Type]
+		if useConfig {
+			c, ok := configNames[res.Type]
+			if !ok {
+				err := fmt.Errorf("resource type %s does not have associated config", res.Type)
+				logrus.WithError(err).Error("using useconfig implies associated config")
+				return err
+			}
+			// Updating resourceNeeds
+			for k, v := range c {
+				resourcesNeeds[k] += v
+			}
+		}
+		actualResources[res.Type] += 1
+	}
+
+	for rType, needs := range resourcesNeeds {
+		actual, ok := actualResources[rType]
+		if !ok {
+			err := fmt.Errorf("need for resource %s that does not exist", rType)
+			logrus.WithError(err).Errorf("invalid configuration")
+			return err
+		}
+		if needs > actual {
+			err := fmt.Errorf("not enough resource of type %s for provisioning", rType)
+			logrus.WithError(err).Errorf("invalid configuration")
+			return err
+		}
+	}
+	return nil
 }
 
 func NewMasonFromFlags() *Mason {
@@ -115,7 +178,7 @@ func (m *Mason) RegisterConfigConverter(name string, fn ConfigConverter) error {
 	return nil
 }
 
-func (m *Mason) convertConfig(configEntry *common.ResourceConfig) (Config, error) {
+func (m *Mason) convertConfig(configEntry *common.ResourcesConfig) (Masonable, error) {
 	fn, ok := m.configConverters[configEntry.Config.Type]
 	if !ok {
 		return nil, fmt.Errorf("config type %s is not supported", configEntry.Name)
@@ -143,22 +206,25 @@ func (m *Mason) cleanAll() {
 }
 
 func (m *Mason) cleanOne(res *common.Resource, leasedResources common.TypeToResources) error {
-	configEntry, err := m.client.GetConfig(res.Type)
+	configEntry, err := m.storage.GetConfig(res.Type)
 	if err != nil {
 		logrus.WithError(err).Errorf("failed to get config for resource %s", res.Type)
 		return err
 	}
-	config, err := m.convertConfig(configEntry)
+	config, err := m.convertConfig(&configEntry)
 	if err != nil {
 		logrus.WithError(err).Errorf("failed to convert config type %s - \n%s", configEntry.Config.Type, configEntry.Config.Content)
 		return err
 	}
-	typedContent, err := config.Construct(res, leasedResources)
+	userData, err := config.Construct(res, leasedResources)
 	if err != nil {
 		logrus.WithError(err).Errorf("failed to construct resource %s", res.Name)
 		return err
 	}
-	res.UserData.Info = *typedContent
+	if err := m.client.UpdateOne(res.Name, res.State, userData); err != nil {
+		logrus.WithError(err).Error("unable to update user data")
+		return err
+	}
 	logrus.Infof("Resource %s is cleaned", res.Name)
 	return nil
 }
@@ -224,23 +290,29 @@ func (m *Mason) recycleAll() {
 }
 
 func (m *Mason) recycleOne(res *common.Resource) (*Requirement, error) {
-	configEntry, err := m.client.GetConfig(res.Type)
+	configEntry, err := m.storage.GetConfig(res.Type)
 	if err != nil {
 		logrus.WithError(err).Errorf("could not get config for resource type %s", res.Type)
 		return nil, err
 	}
 
 	// Releasing leased resources
-	for _, l := range res.UserData.LeasedResources {
+	var leasedResources map[string]string
+	if err := res.UserData.Extract(LeasedResources, &leasedResources); err != nil {
+		logrus.WithError(err).Error("cannot parse %s from User Data", LeasedResources)
+		return nil, err
+	}
+	for _, l := range leasedResources {
 		if err := m.client.ReleaseOne(l, common.Dirty); err != nil {
 			logrus.WithError(err).Errorf("could not release resource %s", l)
 			return nil, err
 		}
 	}
-	if err := m.client.UpdateOne(res.Name, res.State, nil); err != nil {
-		logrus.WithError(err).Errorf("could not update resource %s with freed leased resources", )
+	newUserData := common.UserData{LeasedResources: ""}
+	if err := m.client.UpdateOne(res.Name, res.State, &newUserData); err != nil {
+		logrus.WithError(err).Errorf("could not update resource %s with freed leased resources")
 	}
-	res.UserData = common.ResourceInfo{}
+	delete(res.UserData, LeasedResources)
 	logrus.Infof("Resource %s is being recycled", res.Name)
 	return &Requirement{
 		fulfillment: common.TypeToResources{},
@@ -266,10 +338,6 @@ func (m *Mason) fulfillAll() {
 				}
 			}
 		} else {
-			m.client.UpdateOne(req.resource.Name, req.resource.State, &req.resource.UserData)
-			if err != nil {
-				logrus.WithError(err).Errorf("Unable to release resource %s", req.resource.Name)
-			}
 			m.fulfilled <- req
 		}
 		time.Sleep(m.sleepTime)
@@ -285,13 +353,21 @@ func (m *Mason) fulfillOne(req *Requirement) error {
 				return fmt.Errorf("shutting down")
 			}
 			if req.IsFulFilled() {
-				info := common.ResourceInfo{}
+				var leasedResources []string
 				for _, lr := range req.fulfillment {
 					for _, r := range lr {
-						info.LeasedResources = append(info.LeasedResources, r.Name)
+						leasedResources = append(leasedResources, r.Name)
 					}
 				}
-				req.resource.UserData = info
+				userData := common.UserData{}
+				if err := userData.Set(LeasedResources, leasedResources); err != nil {
+					logrus.WithError(err).Error("failed to add %s user data", LeasedResources)
+					return err
+				}
+				if err := m.client.UpdateOne(req.resource.Name, req.resource.State, &userData); err != nil {
+					logrus.WithError(err).Errorf("Unable to release resource %s", req.resource.Name)
+					return err
+				}
 				logrus.Infof("Requirement for release %s is fulfilled", req.resource.Name)
 				return nil
 			}
@@ -308,6 +384,15 @@ func (m *Mason) fulfillOne(req *Requirement) error {
 		}
 	}
 	return nil
+}
+
+func (m *Mason) UpdateConfigs(storagePath string) error {
+	configs, err := ParseConfig(storagePath)
+	if err != nil {
+		logrus.WithError(err).Error("unable to parse config")
+		return err
+	}
+	return m.storage.SyncConfigs(configs)
 }
 
 func (m *Mason) start(fn func()) {

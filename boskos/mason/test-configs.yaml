@@ -1,18 +1,3 @@
-resources:
-- type: type1
-  state: dirty
-  names:
-  - test-boskos-01
-  - test-boskos-02
-  - test-boskos-03
-- type: type2
-  state: dirty
-  useconfig: true
-  names:
-  - test-boskos-03
-  - test-boskos-04
-  - test-boskos-05
-  - test-boskos-06
 configs:
 - name: type2
   needs:
@@ -36,4 +21,3 @@ configs:
           - https-server
           scopes:
           - https://www.googleapis.com/auth/cloud-platform
-

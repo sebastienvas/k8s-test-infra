@@ -27,6 +27,7 @@ import (
 	"k8s.io/test-infra/boskos/common"
 	"k8s.io/test-infra/boskos/crds"
 	"k8s.io/test-infra/boskos/ranch"
+	"k8s.io/test-infra/boskos/storage"
 )
 
 var (
@@ -43,9 +44,8 @@ func main() {
 		logrus.WithError(err).Fatal("unable to create a CRD client")
 	}
 
-	resourceStorage := ranch.NewCRDStorage(rc)
-	configStorage := ranch.NewMemoryStorage()
-	storage, err := ranch.NewStorage(configStorage, resourceStorage, *storagePath)
+	resourceStorage := storage.NewCRDStorage(rc)
+	storage, err := ranch.NewStorage(resourceStorage, *storagePath)
 	if err != nil {
 		logrus.WithError(err).Fatal("failed to create storage")
 	}
@@ -57,7 +57,7 @@ func main() {
 
 	boskos := http.Server{
 		Handler: NewBoskosHandler(r),
-		Addr: ":8080",
+		Addr:    ":8080",
 	}
 
 	go func() {
@@ -85,10 +85,8 @@ func NewBoskosHandler(r *ranch.Ranch) *http.ServeMux {
 	mux.Handle("/reset", handleReset(r))
 	mux.Handle("/update", handleUpdate(r))
 	mux.Handle("/metric", handleMetric(r))
-	mux.Handle("/getconfig", handleGetConfig(r))
 	return mux
 }
-
 
 // ErrorToStatus translates error into http code
 func ErrorToStatus(err error) int {
@@ -159,51 +157,6 @@ func handleAcquire(r *ranch.Ranch) http.HandlerFunc {
 			return
 		}
 		logrus.Infof("Resource leased: %v", string(resJSON))
-		fmt.Fprint(res, string(resJSON))
-	}
-}
-
-//  handleGetConfig: Handler for /getconfig
-//  Method: POST
-// 	URLParams:
-//		Required: name=[string]  : name of the requested config
-func handleGetConfig(r *ranch.Ranch) http.HandlerFunc {
-	return func(res http.ResponseWriter, req *http.Request) {
-		logrus.WithField("handler", "handleStart").Infof("From %v", req.RemoteAddr)
-
-		if req.Method != http.MethodPost {
-			msg := fmt.Sprintf("Method %v, /acquire only accepts POST.", req.Method)
-			logrus.Warning(msg)
-			http.Error(res, msg, http.StatusMethodNotAllowed)
-			return
-		}
-
-		// TODO(krzyzacy) - sanitize user input
-		name := req.URL.Query().Get("name")
-		if name == "" {
-			msg := fmt.Sprint("Name must be set in the request.")
-			logrus.Warning(msg)
-			http.Error(res, msg, http.StatusBadRequest)
-			return
-		}
-
-		logrus.Infof("Request for config %s", name)
-
-		config, err := r.GetConfig(name)
-
-		if err != nil {
-			logrus.WithError(err).Errorf("No available resource")
-			http.Error(res, err.Error(), ErrorToStatus(err))
-			return
-		}
-
-		resJSON, err := json.Marshal(config)
-		if err != nil {
-			logrus.WithError(err).Errorf("json.Marshal failed: %v", config)
-			http.Error(res, err.Error(), ErrorToStatus(err))
-			return
-		}
-		logrus.Infof("Config found: %v", string(resJSON))
 		fmt.Fprint(res, string(resJSON))
 	}
 }
@@ -304,10 +257,10 @@ func handleReset(r *ranch.Ranch) http.HandlerFunc {
 //  handleUpdate: Handler for /update
 //  Method: POST
 //  URLParams
-//		Required: name=[string]       : name of target resource
-//		Required: owner=[string]      : owner of the resource
-//		Required: state=[string]      : current state of the resource
-//		Optional: info=[ResourceInfo] : information about how to use the resource
+//		Required: name=[string]              : name of target resource
+//		Required: owner=[string]             : owner of the resource
+//		Required: state=[string]             : current state of the resource
+//		Optional: userData=[common.UserData] : user data id to update
 func handleUpdate(r *ranch.Ranch) http.HandlerFunc {
 	return func(res http.ResponseWriter, req *http.Request) {
 		logrus.WithField("handler", "handleUpdate").Infof("From %v", req.RemoteAddr)
@@ -322,16 +275,6 @@ func handleUpdate(r *ranch.Ranch) http.HandlerFunc {
 		name := req.URL.Query().Get("name")
 		owner := req.URL.Query().Get("owner")
 		state := req.URL.Query().Get("state")
-		var info *common.ResourceInfo
-		if req.Body != nil {
-			defer req.Body.Close()
-			if err := json.NewDecoder(req.Body).Decode(&info); err != nil {
-				msg := fmt.Sprintf("Unable to parse Body %s", req.Body)
-				logrus.Warning(msg)
-				http.Error(res, msg, http.StatusBadRequest)
-				return
-			}
-		}
 
 		if name == "" || owner == "" || state == "" {
 			msg := fmt.Sprintf("Name: %v, owner: %v, state : %v, all of them must be set in the request.", name, owner, state)
@@ -340,7 +283,18 @@ func handleUpdate(r *ranch.Ranch) http.HandlerFunc {
 			return
 		}
 
-		if err := r.Update(name, owner, state, info); err != nil {
+		var userData *common.UserData
+
+		if req.Body != nil {
+			defer req.Body.Close()
+
+			if err := json.NewDecoder(req.Body).Decode(&userData); err != nil {
+				logrus.WithError(err).Warning("Unable to read from response body")
+				http.Error(res, err.Error(), http.StatusBadRequest)
+			}
+		}
+
+		if err := r.Update(name, owner, state, userData); err != nil {
 			logrus.WithError(err).Errorf("Update failed: %v - %v (%v)", name, state, owner)
 			http.Error(res, err.Error(), ErrorToStatus(err))
 			return

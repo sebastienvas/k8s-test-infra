@@ -41,10 +41,9 @@ func CreateFakeBoskos(resources int, types []string) *fakeBoskos {
 	for i := 0; i < resources; i++ {
 		fb.resources = append(fb.resources,
 			common.Resource{
-				Name:     fmt.Sprintf("res-%d", i),
-				Type:     types[r.Intn(len(types))],
-				State:    "dirty",
-				UserData: *new(common.ResourceInfo),
+				Name:  fmt.Sprintf("res-%d", i),
+				Type:  types[r.Intn(len(types))],
+				State: "dirty",
 			})
 	}
 

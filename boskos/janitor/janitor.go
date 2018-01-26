@@ -56,7 +56,7 @@ func main() {
 		logrus.Fatal("--resource-type must not be empty!")
 	}
 
-	cmd := exec.Command("gcloud", "auth", "activate-service-account", "--key-file=" + *serviceAccount)
+	cmd := exec.Command("gcloud", "auth", "activate-service-account", "--key-file="+*serviceAccount)
 	if b, err := cmd.CombinedOutput(); err != nil {
 		logrus.WithError(err).Fatalf("fail to activate service account from %s :%s", *serviceAccount, string(b))
 	}
