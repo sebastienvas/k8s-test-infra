@@ -1,0 +1,43 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "go_default_library",
+    srcs = [
+        "crd_storage.go",
+        "memory_storage.go",
+        "storage.go",
+    ],
+    importpath = "k8s.io/test-infra/boskos/storage",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//boskos/common:go_default_library",
+        "//boskos/crds:go_default_library",
+        "//vendor/github.com/sirupsen/logrus:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
+    ],
+)
+
+go_test(
+    name = "go_default_test",
+    srcs = ["storage_test.go"],
+    embed = [":go_default_library"],
+    importpath = "k8s.io/test-infra/boskos/storage",
+    deps = [
+        "//boskos/common:go_default_library",
+        "//boskos/crds:go_default_library",
+    ],
+)
+
+filegroup(
+    name = "package-srcs",
+    srcs = glob(["**"]),
+    tags = ["automanaged"],
+    visibility = ["//visibility:private"],
+)
+
+filegroup(
+    name = "all-srcs",
+    srcs = [":package-srcs"],
+    tags = ["automanaged"],
+    visibility = ["//visibility:public"],
+)

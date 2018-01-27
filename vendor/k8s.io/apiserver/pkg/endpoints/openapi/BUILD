@@ -1,14 +1,10 @@
-package(default_visibility = ["//visibility:public"])
-
-load(
-    "@io_bazel_rules_go//go:def.bzl",
-    "go_library",
-)
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "go_default_library",
     srcs = ["openapi.go"],
     importpath = "k8s.io/apiserver/pkg/endpoints/openapi",
+    visibility = ["//visibility:public"],
     deps = [
         "//vendor/github.com/emicklei/go-restful:go_default_library",
         "//vendor/github.com/go-openapi/spec:go_default_library",
@@ -33,4 +29,5 @@ filegroup(
         "//vendor/k8s.io/apiserver/pkg/endpoints/openapi/testing:all-srcs",
     ],
     tags = ["automanaged"],
+    visibility = ["//visibility:public"],
 )

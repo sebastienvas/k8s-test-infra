@@ -4,7 +4,8 @@ go_library(
     name = "go_default_library",
     srcs = [
         "client.go",
-        "types.go",
+        "resource_crd.go",
+        "resources_config_crd.go",
     ],
     importpath = "k8s.io/test-infra/boskos/crds",
     visibility = ["//visibility:public"],

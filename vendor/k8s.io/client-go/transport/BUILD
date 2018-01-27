@@ -1,9 +1,4 @@
-package(default_visibility = ["//visibility:public"])
-
-load(
-    "@io_bazel_rules_go//go:def.bzl",
-    "go_library",
-)
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "go_default_library",
@@ -14,6 +9,7 @@ go_library(
         "transport.go",
     ],
     importpath = "k8s.io/client-go/transport",
+    visibility = ["//visibility:public"],
     deps = [
         "//vendor/github.com/golang/glog:go_default_library",
         "//vendor/github.com/gregjones/httpcache:go_default_library",
@@ -37,4 +33,5 @@ filegroup(
         "//vendor/k8s.io/client-go/transport/spdy:all-srcs",
     ],
     tags = ["automanaged"],
+    visibility = ["//visibility:public"],
 )

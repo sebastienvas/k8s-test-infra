@@ -1,8 +1,9 @@
-package(default_visibility = ["//visibility:public"])
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
-load(
-    "@io_bazel_rules_go//go:def.bzl",
-    "go_library",
+filegroup(
+    name = "go_default_library_protos",
+    srcs = ["generated.proto"],
+    visibility = ["//visibility:public"],
 )
 
 go_library(
@@ -13,6 +14,7 @@ go_library(
         "interfaces.go",
     ],
     importpath = "k8s.io/apimachinery/pkg/runtime/schema",
+    visibility = ["//visibility:public"],
     deps = ["//vendor/github.com/gogo/protobuf/proto:go_default_library"],
 )
 
@@ -27,10 +29,5 @@ filegroup(
     name = "all-srcs",
     srcs = [":package-srcs"],
     tags = ["automanaged"],
-)
-
-filegroup(
-    name = "go_default_library_protos",
-    srcs = ["generated.proto"],
     visibility = ["//visibility:public"],
 )

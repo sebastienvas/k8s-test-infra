@@ -37,5 +37,5 @@ go_test(
     data = ["//boskos:testdata"],
     embed = [":go_default_library"],
     importpath = "k8s.io/test-infra/boskos/gcp",
-    deps = ["//boskos/ranch:go_default_library"],
+    deps = ["//boskos/mason:go_default_library"],
 )

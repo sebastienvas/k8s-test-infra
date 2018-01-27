@@ -1,14 +1,10 @@
-package(default_visibility = ["//visibility:public"])
-
-load(
-    "@io_bazel_rules_go//go:def.bzl",
-    "go_library",
-)
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "go_default_library",
     srcs = ["envelope.go"],
     importpath = "k8s.io/apiserver/pkg/storage/value/encrypt/envelope",
+    visibility = ["//visibility:public"],
     deps = [
         "//vendor/github.com/hashicorp/golang-lru:go_default_library",
         "//vendor/k8s.io/apiserver/pkg/storage/value:go_default_library",
@@ -26,4 +22,5 @@ filegroup(
     name = "all-srcs",
     srcs = [":package-srcs"],
     tags = ["automanaged"],
+    visibility = ["//visibility:public"],
 )

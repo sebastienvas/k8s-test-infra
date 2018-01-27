@@ -27,7 +27,6 @@ filegroup(
     name = "all-srcs",
     srcs = [
         ":package-srcs",
-        "//vendor/github.com/jmespath/go-jmespath/cmd/jpgo:all-srcs",
         "//vendor/github.com/jmespath/go-jmespath/fuzz:all-srcs",
     ],
     tags = ["automanaged"],

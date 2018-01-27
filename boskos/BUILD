@@ -16,15 +16,19 @@ go_binary(
 
 go_test(
     name = "go_default_test",
-    srcs = ["boskos_test.go"],
+    srcs = [
+        "boskos_test.go",
+        "server_client_test.go",
+    ],
     data = [":testdata"],
     embed = [":go_default_library"],
     importpath = "k8s.io/test-infra/boskos",
     deps = [
+        "//boskos/client:go_default_library",
         "//boskos/common:go_default_library",
         "//boskos/crds:go_default_library",
-        "//boskos/gcp:go_default_library",
         "//boskos/ranch:go_default_library",
+        "//boskos/storage:go_default_library",
     ],
 )
 
@@ -36,6 +40,7 @@ go_library(
         "//boskos/common:go_default_library",
         "//boskos/crds:go_default_library",
         "//boskos/ranch:go_default_library",
+        "//boskos/storage:go_default_library",
         "//vendor/github.com/sirupsen/logrus:go_default_library",
     ],
 )
@@ -43,8 +48,7 @@ go_library(
 filegroup(
     name = "testdata",
     srcs = [
-        "config.yaml",
-        "test-config.yaml",
+        "resources.yaml",
     ],
 )
 
@@ -69,6 +73,7 @@ filegroup(
         "//boskos/metrics:all-srcs",
         "//boskos/ranch:all-srcs",
         "//boskos/reaper:all-srcs",
+        "//boskos/storage:all-srcs",
     ],
     tags = ["automanaged"],
 )
