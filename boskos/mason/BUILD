@@ -40,6 +40,7 @@ filegroup(
         "test-configs.yaml",
         "test-resources.yaml",
     ],
+    visibility = ["//visibility:public"],
 )
 
 filegroup(

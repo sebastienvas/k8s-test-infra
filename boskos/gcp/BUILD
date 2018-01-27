@@ -34,7 +34,7 @@ filegroup(
 go_test(
     name = "go_default_test",
     srcs = ["config_test.go"],
-    data = ["//boskos:testdata"],
+    data = ["//boskos/mason:testdata"],
     embed = [":go_default_library"],
     importpath = "k8s.io/test-infra/boskos/gcp",
     deps = ["//boskos/mason:go_default_library"],
