@@ -779,7 +779,7 @@ func TestDefault(t *testing.T) {
 }
 
 func TestConfig(t *testing.T) {
-	resources, err := ranch.ParseConfig("config.yaml")
+	resources, err := ranch.ParseConfig("resources.yaml")
 	if err != nil {
 		t.Errorf("parseConfig error: %v", err)
 	}
