@@ -31,9 +31,9 @@ import (
 )
 
 const (
+	Owner            = "Mason"
 	Cleaning         = "cleaning"
 	Leased           = "leased"
-	Owner            = "Mason"
 	DefaultSleepTime = 10 * time.Second
 	LeasedResources  = "LEASED_RESOURCES"
 )
@@ -55,7 +55,9 @@ type Masonable interface {
 type ConfigConverter func(string) (Masonable, error)
 
 type boskosClient interface {
-	Acquire(rtype, state, dest string) (*common.Resource, error)
+	AcquireLeasedResource(name, rtype, state, dest string) (*common.Resource, error)
+	AcquireLeasedResources(rtype, state, dest string) (*common.Resource, []common.Resource, error)
+	ReleaseLeasedResources(name, dest string) error
 	ReleaseOne(name, dest string) error
 	UpdateOne(name, state string, userData common.UserData) error
 }
@@ -152,10 +154,11 @@ func ValidateConfig(configs []common.ResourcesConfig, resources []common.Resourc
 }
 
 func NewMasonFromFlags() *Mason {
-	boskos := client.NewClient(Owner, *client.BoskosUrl)
+	boskosClient := client.NewClient(Owner, *client.BoskosUrl)
+	masonClient := NewClient(boskosClient)
 	logrus.Info("Initialized boskos client!")
 
-	return NewMason(rTypes, *channelBufferSize, boskos, DefaultSleepTime)
+	return NewMason(rTypes, *channelBufferSize, masonClient, DefaultSleepTime)
 }
 
 func NewMason(rtypes []string, channelSize int, client boskosClient, sleepTime time.Duration) *Mason {
@@ -252,7 +255,7 @@ func (m *Mason) freeOne(res *common.Resource) error {
 		return err
 	}
 	// Finally return the resource as freeOne
-	if err := m.client.ReleaseOne(res.Name, common.Free); err != nil {
+	if err := m.client.ReleaseLeasedResources(res.Name, common.Free); err != nil {
 		logrus.WithError(err).Errorf("failed to release resource %s", res.Name)
 		return err
 	}
@@ -272,16 +275,14 @@ func (m *Mason) recycleAll() {
 			return
 		case <-time.After(m.sleepTime):
 			for _, r := range m.typesToClean {
-				if res, err := m.client.Acquire(r, common.Dirty, Cleaning); err != nil {
+				if res, resources, err := m.client.AcquireLeasedResources(r, common.Dirty, Cleaning); err != nil {
 					logrus.WithError(err).Debug("boskos acquire failed!")
-				} else if res == nil {
-					logrus.Fatal("nil resource was returned")
 				} else {
-					if req, err := m.recycleOne(res); err != nil {
+					if req, err := m.recycleOne(res, resources); err != nil {
 						logrus.WithError(err).Errorf("unable to recycle resource %s", res.Name)
-						err := m.client.ReleaseOne(res.Name, common.Dirty)
+						err := m.client.ReleaseLeasedResources(res.Name, common.Dirty)
 						if err != nil {
-							logrus.WithError(err).Errorf("Unable to release resource %s", res.Name)
+							logrus.WithError(err).Errorf("Unable to release resources %s", res.Name)
 						}
 					} else {
 						m.pending <- *req
@@ -292,7 +293,7 @@ func (m *Mason) recycleAll() {
 	}
 }
 
-func (m *Mason) recycleOne(res *common.Resource) (*Requirement, error) {
+func (m *Mason) recycleOne(res *common.Resource, resources []common.Resource) (*Requirement, error) {
 	configEntry, err := m.storage.GetConfig(res.Type)
 	if err != nil {
 		logrus.WithError(err).Errorf("could not get config for resource type %s", res.Type)
@@ -300,22 +301,15 @@ func (m *Mason) recycleOne(res *common.Resource) (*Requirement, error) {
 	}
 
 	// Releasing leased resources
-	var leasedResources common.LeasedResources
-	if err := res.UserData.Extract(LeasedResources, &leasedResources); err != nil {
-		if _, ok := err.(*common.UserDataNotFound); !ok {
-			logrus.WithError(err).Errorf("cannot parse %s from User Data", LeasedResources)
-			return nil, err
-		}
-	}
-	for _, l := range leasedResources {
-		if err := m.client.ReleaseOne(l, common.Dirty); err != nil {
-			logrus.WithError(err).Errorf("could not release resource %s", l)
+	for _, lr := range resources {
+		if err := m.client.ReleaseOne(lr.Name, common.Dirty); err != nil {
+			logrus.WithError(err).Errorf("could not release resource %s", lr.Name)
 			return nil, err
 		}
 	}
 	newUserData := common.UserData{LeasedResources: ""}
 	if err := m.client.UpdateOne(res.Name, res.State, newUserData); err != nil {
-		logrus.WithError(err).Errorf("could not update resource %s with freed leased resources")
+		logrus.WithError(err).Errorf("could not update resource %s with freed leased resources", res.Name)
 	}
 	delete(res.UserData, LeasedResources)
 	logrus.Infof("Resource %s is being recycled", res.Name)
@@ -351,35 +345,16 @@ func (m *Mason) fulfillAll() {
 
 func (m *Mason) fulfillOne(req *Requirement) error {
 	// Making a copy
-	needs := req.needs
+	needs := common.ResourceNeeds{}
+	for k, v := range req.needs {
+		needs[k] = v
+	}
 	for rType := range needs {
 		for needs[rType] > 0 {
 			if m.shutdown {
 				return fmt.Errorf("shutting down")
 			}
-			if req.IsFulFilled() {
-				var leasedResources common.LeasedResources
-				for _, lr := range req.fulfillment {
-					for _, r := range lr {
-						leasedResources = append(leasedResources, r.Name)
-					}
-				}
-				userData := common.UserData{}
-				if err := userData.Set(LeasedResources, &leasedResources); err != nil {
-					logrus.WithError(err).Error("failed to add %s user data", LeasedResources)
-					return err
-				}
-				if err := m.client.UpdateOne(req.resource.Name, req.resource.State, userData); err != nil {
-					logrus.WithError(err).Errorf("Unable to release resource %s", req.resource.Name)
-					return err
-				}
-				logrus.Infof("Requirement for release %s is fulfilled", req.resource.Name)
-				return nil
-			}
-			if needs[rType] <= 0 {
-				continue
-			}
-			if res, err := m.client.Acquire(rType, common.Free, Leased); err != nil {
+			if res, err := m.client.AcquireLeasedResource(req.resource.Name, rType, common.Free, Leased); err != nil {
 				logrus.WithError(err).Debug("boskos acquire failed!")
 			} else {
 				req.fulfillment[rType] = append(req.fulfillment[rType], res)
@@ -387,6 +362,25 @@ func (m *Mason) fulfillOne(req *Requirement) error {
 			}
 			time.Sleep(m.sleepTime)
 		}
+	}
+	if req.IsFulFilled() {
+		var leasedResources common.LeasedResources
+		for _, lr := range req.fulfillment {
+			for _, r := range lr {
+				leasedResources = append(leasedResources, r.Name)
+			}
+		}
+		userData := common.UserData{}
+		if err := userData.Set(LeasedResources, &leasedResources); err != nil {
+			logrus.WithError(err).Error("failed to add %s user data", LeasedResources)
+			return err
+		}
+		if err := m.client.UpdateOne(req.resource.Name, req.resource.State, userData); err != nil {
+			logrus.WithError(err).Errorf("Unable to release resource %s", req.resource.Name)
+			return err
+		}
+		logrus.Infof("Requirement for release %s is fulfilled", req.resource.Name)
+		return nil
 	}
 	return nil
 }

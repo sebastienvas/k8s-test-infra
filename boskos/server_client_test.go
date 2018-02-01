@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -10,7 +11,15 @@ import (
 	"k8s.io/test-infra/boskos/client"
 	"k8s.io/test-infra/boskos/common"
 	"k8s.io/test-infra/boskos/ranch"
+	"sort"
 )
+
+// json does not serialized time with nanosecond precision
+func now() time.Time {
+	format := "2006-01-02 15:04:05.000"
+	now, _:= time.Parse(format, time.Now().Format(format))
+	return now
+}
 
 func makeTestBoskos(r *ranch.Ranch) *httptest.Server {
 	handler := NewBoskosHandler(r)
@@ -62,6 +71,70 @@ func TestAcquireUpdate(t *testing.T) {
 		}
 		if !reflect.DeepEqual(updatedResource.UserData, userData) {
 			t.Errorf("info should match. Expected \n%v, received \n%v", userData, updatedResource.UserData)
+		}
+	}
+}
+
+func TestAcquireByState(t *testing.T) {
+	newState := "newState"
+	owner := "owner"
+	fakeNow := now()
+	updateTime := func() time.Time { return fakeNow }
+	var testcases = []struct {
+		name, state         string
+		resources, expected []common.Resource
+		err                 error
+	}{
+		{
+			name:  "noState",
+			state: "state1",
+			resources: []common.Resource{
+				common.NewResource("test", "type", common.Dirty, "", time.Time{}),
+			},
+			err: fmt.Errorf("resource not found"),
+		},
+		{
+			name:  "existing",
+			state: "state1",
+			resources: []common.Resource{
+				common.NewResource("test1", "type1", common.Dirty, "", time.Time{}),
+				common.NewResource("test2", "type2", "state1", "", time.Time{}),
+				common.NewResource("test3", "type3", "state1", "", time.Time{}),
+				common.NewResource("test4", "type4", common.Dirty, "", time.Time{}),
+			},
+			expected: []common.Resource{
+				common.NewResource("test2", "type2", newState, owner, fakeNow),
+				common.NewResource("test3", "type3", newState, owner, fakeNow),
+			},
+		},
+		{
+			name:  "alreadyOwned",
+			state: "state1",
+			resources: []common.Resource{
+				common.NewResource("test1", "type1", common.Dirty, "", time.Time{}),
+				common.NewResource("test2", "type2", "state1", "foo", time.Time{}),
+				common.NewResource("test3", "type3", "state1", "foo", time.Time{}),
+				common.NewResource("test4", "type4", common.Dirty, "", time.Time{}),
+			},
+			err: fmt.Errorf("resources already used by another user"),
+		},
+	}
+	fmt.Println("test")
+	for _, tc := range testcases {
+		r := MakeTestRanch(tc.resources)
+		r.UpdateTime = updateTime
+		boskos := makeTestBoskos(r)
+		client := client.NewClient(owner, boskos.URL)
+
+		receivedRes, err := client.AcquireByState(tc.state, newState)
+		boskos.Close()
+		if !reflect.DeepEqual(err, tc.err) {
+			t.Errorf("tc: %s - errors don't match, expected %v, received\n %v", tc.name, err, tc.err)
+			continue
+		}
+		sort.Sort(common.ResourceByName(receivedRes))
+		if !reflect.DeepEqual(receivedRes, tc.expected) {
+			t.Errorf("tc: %s - resources should match. Expected \n%v, received \n%v", tc.name, tc.expected[1].UserData, receivedRes[1].UserData)
 		}
 	}
 }

@@ -74,7 +74,7 @@ func NewResource(name, rtype, state, owner string, t time.Time) Resource {
 		State:      state,
 		Owner:      owner,
 		LastUpdate: t,
-		UserData:   UserData{},
+		UserData:   map[string]string{},
 	}
 }
 
@@ -86,13 +86,13 @@ func NewResourcesFromConfig(e ResourceEntry) []Resource {
 	return resources
 }
 
-// ResourceNotFound will be returned if requested resource does not exist.
+// UserNotFound will be returned if requested resource does not exist.
 type UserDataNotFound struct {
-	id string
+	ID string
 }
 
 func (ud *UserDataNotFound) Error() string {
-	return fmt.Sprintf("user data id %s does not exist", ud.id)
+	return fmt.Sprintf("user data ID %s does not exist", ud.ID)
 }
 
 type ResourceByUpdateTime []Resource

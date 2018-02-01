@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -81,6 +82,7 @@ func NewBoskosHandler(r *ranch.Ranch) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/", handleDefault(r))
 	mux.Handle("/acquire", handleAcquire(r))
+	mux.Handle("/acquirebystate", handleAcquireByState(r))
 	mux.Handle("/release", handleRelease(r))
 	mux.Handle("/reset", handleReset(r))
 	mux.Handle("/update", handleUpdate(r))
@@ -153,11 +155,67 @@ func handleAcquire(r *ranch.Ranch) http.HandlerFunc {
 		if err != nil {
 			logrus.WithError(err).Errorf("json.Marshal failed: %v, resource will be released", resource)
 			http.Error(res, err.Error(), ErrorToStatus(err))
-			resource.Owner = "" // release the resource, though this is not expected to happen.
+			// release the resource, though this is not expected to happen.
+			r.Release(resource.Name, state, owner)
+			logrus.WithError(err).Warning("unable to release resource %s", resource.Name)
 			return
 		}
 		logrus.Infof("Resource leased: %v", string(resJSON))
 		fmt.Fprint(res, string(resJSON))
+	}
+}
+
+//  handleAcquireByState: Handler for /acquire
+//  Method: POST
+// 	URLParams:
+//		Required: state=[string] : current state of the requested resource
+//		Required: dest=[string] : destination state of the requested resource
+//		Required: owner=[string] : requester of the resource
+func handleAcquireByState(r *ranch.Ranch) http.HandlerFunc {
+	return func(res http.ResponseWriter, req *http.Request) {
+		logrus.WithField("handler", "handleStart").Infof("From %v", req.RemoteAddr)
+
+		if req.Method != http.MethodPost {
+			msg := fmt.Sprintf("Method %v, /acquire only accepts POST.", req.Method)
+			logrus.Warning(msg)
+			http.Error(res, msg, http.StatusMethodNotAllowed)
+			return
+		}
+
+		// TODO(krzyzacy) - sanitize user input
+		state := req.URL.Query().Get("state")
+		dest := req.URL.Query().Get("dest")
+		owner := req.URL.Query().Get("owner")
+		if state == "" || dest == "" || owner == "" {
+			msg := fmt.Sprintf("state: %v, dest: %v, owner: %v, all of them must be set in the request.", state, dest, owner)
+			logrus.Warning(msg)
+			http.Error(res, msg, http.StatusBadRequest)
+			return
+		}
+
+		logrus.Infof("Request for a %v from %v, dest %v", state, owner, dest)
+
+		resources, err := r.AcquireByState(state, dest, owner)
+
+		if err != nil {
+			logrus.WithError(err).Errorf("No available resources")
+			http.Error(res, err.Error(), ErrorToStatus(err))
+			return
+		}
+
+		resBytes := new(bytes.Buffer)
+
+		if err := json.NewEncoder(resBytes).Encode(resources); err != nil {
+			logrus.WithError(err).Errorf("json.Marshal failed: %v, resources will be released", resources)
+			http.Error(res, err.Error(), ErrorToStatus(err))
+			for _, resource := range resources {
+				err := r.Release(resource.Name, state, owner)
+				logrus.WithError(err).Warning("unable to release resource %s", resource.Name)
+			}
+			return
+		}
+		logrus.Infof("Resource leased: %v", string(resBytes.Bytes()))
+		fmt.Fprint(res, string(resBytes.Bytes()))
 	}
 }
 

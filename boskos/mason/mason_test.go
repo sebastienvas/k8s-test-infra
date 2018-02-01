@@ -20,11 +20,8 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"sync"
 	"testing"
 	"time"
-
-	"github.com/sirupsen/logrus"
 
 	"k8s.io/test-infra/boskos/common"
 	"k8s.io/test-infra/boskos/ranch"
@@ -37,8 +34,7 @@ const (
 )
 
 type fakeBoskos struct {
-	lock      sync.Mutex
-	resources map[string]*common.Resource
+	ranch *ranch.Ranch
 }
 
 type testConfig map[string]struct {
@@ -58,11 +54,11 @@ func (fc *fakeConfig) Construct(res *common.Resource, typeToRes common.TypeToRes
 }
 
 // Create a fake client
-func createFakeBoskos(tc testConfig) (*fakeBoskos, []common.ResourcesConfig) {
-	fb := &fakeBoskos{}
-	resources := map[string]*common.Resource{}
+func createFakeBoskos(tc testConfig) (*ranch.Storage, *Client, []common.ResourcesConfig) {
 	configNames := map[string]bool{}
 	var configs []common.ResourcesConfig
+	s, _ := ranch.NewStorage(storage.NewMemoryStorage(), "")
+	r, _ := ranch.NewRanch("", s)
 
 	for rtype, c := range tc {
 		for i := 0; i < c.count; i++ {
@@ -86,50 +82,25 @@ func createFakeBoskos(tc testConfig) (*fakeBoskos, []common.ResourcesConfig) {
 					})
 				}
 			}
-			resources[res.Name] = &res
+			s.AddResource(res)
 		}
 	}
-	fb.resources = resources
-	return fb, configs
+	return s, NewClient(&fakeBoskos{r}), configs
 }
 
 func (fb *fakeBoskos) Acquire(rtype, state, dest string) (*common.Resource, error) {
-	fb.lock.Lock()
-	defer fb.lock.Unlock()
+	return fb.ranch.Acquire(rtype, state, dest, Owner)}
 
-	for _, r := range fb.resources {
-		if r.Type == rtype && r.State == state {
-			r.State = dest
-			logrus.Infof("resource %s state updated from %s to %s", r.Name, state, dest)
-			return r, nil
-		}
-	}
-
-	return nil, fmt.Errorf("could not find resource of type %s", rtype)
+func (fb *fakeBoskos) AcquireByState(state, dest string) ([]common.Resource, error) {
+	return fb.ranch.AcquireByState(state, dest, Owner)
 }
 
 func (fb *fakeBoskos) ReleaseOne(name, dest string) error {
-	fb.lock.Lock()
-	defer fb.lock.Unlock()
-	res, ok := fb.resources[name]
-	if ok {
-		logrus.Infof("Released resource %s, state updated from %s to %s", name, res.State, dest)
-		res.State = dest
-		return nil
-	}
-	return fmt.Errorf("no resource %v", name)
+	return fb.ranch.Release(name, dest, Owner)
 }
 
 func (fb *fakeBoskos) UpdateOne(name, state string, userData common.UserData) error {
-	fb.lock.Lock()
-	defer fb.lock.Unlock()
-	res, ok := fb.resources[name]
-	if ok {
-		res.State = state
-		res.UserData.Update(userData)
-		return nil
-	}
-	return fmt.Errorf("no resource %v", name)
+	return fb.ranch.Update(name, Owner, state, userData )
 }
 
 func TestRecycleLeasedResources(t *testing.T) {
@@ -146,10 +117,14 @@ func TestRecycleLeasedResources(t *testing.T) {
 		},
 	}
 
-	bclient, configs := createFakeBoskos(tc)
-	bclient.resources["type1_0"].State = Leased
-	bclient.resources["type2_0"].UserData.Set(LeasedResources, &[]string{"type1_0"})
-	m := NewMason(masonTypes, 1, bclient, time.Millisecond)
+	rStorage, mClient, configs := createFakeBoskos(tc)
+	res1, _:= rStorage.GetResource("type1_0")
+	res1.State = "type2_0"
+	rStorage.UpdateResource(res1)
+	res2, _:= rStorage.GetResource("type2_0")
+	res2.UserData.Set(LeasedResources, &[]string{"type1_0"})
+	rStorage.UpdateResource(res2)
+	m := NewMason(masonTypes, 1, mClient, time.Millisecond)
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.start(m.recycleAll)
@@ -160,10 +135,12 @@ func TestRecycleLeasedResources(t *testing.T) {
 		t.Errorf("Timeout")
 	}
 	m.Stop()
-	if bclient.resources["type2_0"].State != Cleaning {
+	res1, _ = rStorage.GetResource("type1_0")
+	res2, _ = rStorage.GetResource("type2_0")
+	if res2.State != Cleaning {
 		t.Errorf("Resource state should be cleaning")
 	}
-	if bclient.resources["type1_0"].State != common.Dirty {
+	if res1.State != common.Dirty {
 		t.Errorf("Resource state should be dirty")
 	}
 }
@@ -182,8 +159,8 @@ func TestRecycleNoLeasedResources(t *testing.T) {
 		},
 	}
 
-	bclient, configs := createFakeBoskos(tc)
-	m := NewMason(masonTypes, 1, bclient, time.Millisecond)
+	rStorage, mClient, configs := createFakeBoskos(tc)
+	m := NewMason(masonTypes, 1, mClient, time.Millisecond)
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.start(m.recycleAll)
@@ -194,11 +171,13 @@ func TestRecycleNoLeasedResources(t *testing.T) {
 		t.Errorf("Timeout")
 	}
 	m.Stop()
-	if bclient.resources["type2_0"].State != Cleaning {
+	res1, _ := rStorage.GetResource("type1_0")
+	res2, _ := rStorage.GetResource("type2_0")
+	if res2.State != Cleaning {
 		t.Errorf("Resource state should be cleaning")
 	}
-	if bclient.resources["type1_0"].State != common.Free {
-		t.Errorf("Resource state should be untouched, current %s", bclient.resources["type1_0"].State)
+	if res1.State != common.Free {
+		t.Errorf("Resource state should be untouched, current %s", mClient.resources["type1_0"].State)
 	}
 }
 
@@ -216,10 +195,10 @@ func TestFulfillOne(t *testing.T) {
 		},
 	}
 
-	bclient, configs := createFakeBoskos(tc)
-	m := NewMason(masonTypes, 1, bclient, time.Millisecond)
+	rStorage, mClient, configs := createFakeBoskos(tc)
+	m := NewMason(masonTypes, 1, mClient, time.Millisecond)
 	m.storage.SyncConfigs(configs)
-	res := bclient.resources["type2_0"]
+	res, _ := mClient.basic.Acquire("type2", common.Dirty, Cleaning)
 	conf, err := m.storage.GetConfig("type2")
 	if err != nil {
 		t.Error("failed to get config")
@@ -239,8 +218,21 @@ func TestFulfillOne(t *testing.T) {
 		t.Errorf("there should be only one resources")
 	}
 	userRes := req.fulfillment["type1"][0]
-	if bclient.resources[userRes.Name].State != Leased {
-		t.Errorf("Statys should be Leased")
+	leasedResource, _ := rStorage.GetResource(userRes.Name)
+	if leasedResource.State != Leased {
+
+		t.Errorf("State should be Leased")
+	}
+	*res, _ = rStorage.GetResource(res.Name)
+	var leasedResources common.LeasedResources
+	if res.UserData.Extract(LeasedResources, &leasedResources); err != nil  {
+		t.Errorf("unable to extract %s", LeasedResources)
+	}
+	if len(leasedResources) != 1 {
+		t.Errorf("there should be one leased resource, found %d", len(leasedResources))
+	}
+	if leasedResources[0] != leasedResource.Name {
+		t.Errorf("Leased resource don t match")
 	}
 
 }
@@ -253,36 +245,50 @@ func TestMason(t *testing.T) {
 		},
 		"type2": {
 			resourceNeeds: &common.ResourceNeeds{
-				"type1": 10,
+				"type1": 1,
 			},
 			count: 10,
 		},
 	}
-	bclient, configs := createFakeBoskos(tc)
-	m := NewMason(masonTypes, 5, bclient, time.Millisecond)
+	rStorage, mClient, configs := createFakeBoskos(tc)
+	m := NewMason(masonTypes, 5, mClient, time.Millisecond)
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()
-	<-time.After(2 * time.Second)
-	for _, res := range bclient.resources {
-		switch res.Type {
-		case "type1":
-			if res.State != Leased {
-				t.Errorf("resource %v should be leased", res)
+	<-time.After(30 * time.Second)
+	for i:=0; i<10; i++ {
+		res, resources, err := mClient.AcquireLeasedResources("type2", common.Free, "Used")
+		if err != nil {
+			t.Errorf("Count %d: There should be free resources", i)
+		}
+		if len(resources) != 1 {
+			t.Error("there should be 1 resource of type1")
+		}
+		for _,r := range resources {
+			if r.State != res.Name {
+				t.Errorf("unexpected resource %s state %s", r.Name, r.State)
 			}
-		case "type2":
-			if res.State != common.Free {
-				t.Errorf("resource %v should be freeOne", res)
+			if r.Type != "type1" {
+				t.Error("resource should be of type type1")
 			}
-		default:
-			t.Errorf("resource type %s not expected", res.Type)
+		}
+		if res.State != common.Free {
+			t.Errorf("resource %v should be freeOne", res)
+		}
+		if err := mClient.ReleaseLeasedResources(res.Name, common.Dirty); err != nil {
+			t.Error("unable to release leased resources")
+
 		}
 	}
-	res, err := bclient.Acquire("type2", common.Free, "Used")
-	if err != nil {
-		t.Error("There should be free resources")
+	if _, _, err := mClient.AcquireLeasedResources("type2", common.Free, "Used"); err == nil {
+		t.Error("there should not be any resource left")
 	}
-	bclient.ReleaseOne(res.Name, common.Dirty)
+	resources, _ := rStorage.GetResources()
+	for _, res := range resources {
+		if res.State != common.Dirty {
+			t.Errorf("resource %s state should be %s, found %", res.Name, common.Dirty, res.Type)
+		}
+	}
 	m.Stop()
 }
 
@@ -294,13 +300,13 @@ func TestMasonStartStop(t *testing.T) {
 		},
 		"type2": {
 			resourceNeeds: &common.ResourceNeeds{
-				"type1": 10,
+				"type1": 1,
 			},
 			count: 10,
 		},
 	}
-	bclient, configs := createFakeBoskos(tc)
-	m := NewMason(masonTypes, 5, bclient, time.Millisecond)
+	_, mClient, configs := createFakeBoskos(tc)
+	m := NewMason(masonTypes, 5, mClient, time.Millisecond)
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()

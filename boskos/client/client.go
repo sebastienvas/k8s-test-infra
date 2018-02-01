@@ -57,7 +57,7 @@ func NewClient(owner string, url string) *Client {
 
 // Acquire asks boskos for a resource of certain type in certain state, and set the resource to dest state.
 // Returns name of the resource on success.
-func (c *Client) Acquire(rtype string, state string, dest string) (*common.Resource, error) {
+func (c *Client) Acquire(rtype, state, dest string) (*common.Resource, error) {
 	r, err := c.acquire(rtype, state, dest)
 	if err != nil {
 		return nil, err
@@ -70,6 +70,23 @@ func (c *Client) Acquire(rtype string, state string, dest string) (*common.Resou
 	}
 
 	return r, nil
+}
+
+// Acquire asks boskos for a resource of certain type in certain state, and set the resource to dest state.
+// Returns name of the resource on success.
+func (c *Client) AcquireByState(state, dest string) ([]common.Resource, error) {
+	resources, err := c.acquireByState(state, dest)
+	if err != nil {
+		return nil, err
+	}
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if resources != nil {
+		for _, resource := range resources {
+			c.resources = append(c.resources, resource.Name)
+		}
+	}
+	return resources, nil
 }
 
 // ReleaseAll returns all resource hold by the client back to boskos and set them to dest state.
@@ -92,12 +109,11 @@ func (c *Client) ReleaseAll(dest string) error {
 			return err
 		}
 	}
-
 	return nil
 }
 
 // ReleaseOne returns one of owned resource back to boskos and set it to dest state.
-func (c *Client) ReleaseOne(name string, dest string) error {
+func (c *Client) ReleaseOne(name, dest string) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -202,6 +218,27 @@ func (c *Client) acquire(rtype, state, dest string) (*common.Resource, error) {
 		return &res, nil
 	} else if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("resource not found")
+	}
+	return nil, fmt.Errorf("status %s, status code %v", resp.Status, resp.StatusCode)
+}
+
+func (c *Client) acquireByState(state, dest string) ([]common.Resource, error) {
+	resp, err := http.Post(fmt.Sprintf("%v/acquirebystate?state=%v&dest=%v&owner=%v", c.url, state, dest, c.owner), "", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		var resources []common.Resource
+		if err := json.NewDecoder(resp.Body).Decode(&resources); err != nil {
+			return nil, err
+		}
+		return resources, nil
+	} else if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("resource not found")
+	} else if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("resources already used by another user")
 	}
 	return nil, fmt.Errorf("status %s, status code %v", resp.Status, resp.StatusCode)
 }

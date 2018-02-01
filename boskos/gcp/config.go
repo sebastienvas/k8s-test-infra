@@ -105,15 +105,11 @@ func (rc *ResourcesConfig) Construct(res *common.Resource, types common.TypeToRe
 	typesCopy := types
 
 	popProject := func(rType string) *common.Resource {
-		var r *common.Resource
-		if len(typesCopy[rType]) >= 1 {
-			r = typesCopy[rType][0]
+		if len(typesCopy[rType]) == 0 {
+			return nil
 		}
-		if len(typesCopy[rType]) >= 2 {
-			typesCopy[rType] = typesCopy[rType][1:]
-		} else {
-			typesCopy[rType] = nil
-		}
+		r := typesCopy[rType][len(typesCopy[rType]) -1]
+		typesCopy[rType] = typesCopy[rType][:len(typesCopy[rType])-1]
 		return r
 	}
 
