@@ -108,7 +108,7 @@ func (rc *ResourcesConfig) Construct(res *common.Resource, types common.TypeToRe
 		if len(typesCopy[rType]) == 0 {
 			return nil
 		}
-		r := typesCopy[rType][len(typesCopy[rType]) -1]
+		r := typesCopy[rType][len(typesCopy[rType])-1]
 		typesCopy[rType] = typesCopy[rType][:len(typesCopy[rType])-1]
 		return r
 	}

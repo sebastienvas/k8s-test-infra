@@ -32,7 +32,7 @@ type Ranch struct {
 	Storage       *Storage
 	resourcesLock sync.RWMutex
 	// For testing
-	UpdateTime func()time.Time
+	UpdateTime func() time.Time
 }
 
 func updateTime() time.Time {
@@ -143,7 +143,7 @@ func (r *Ranch) AcquireByState(state, dest, owner string) ([]common.Resource, er
 
 	for idx := range allResources {
 		res := allResources[idx]
-		if state == res.State{
+		if state == res.State {
 			if res.Owner != "" {
 				return nil, &OwnerNotMatch{owner, res.Owner}
 			}

@@ -23,8 +23,8 @@ import (
 	"k8s.io/test-infra/boskos/common"
 
 	"github.com/deckarep/golang-set"
-	"github.com/sirupsen/logrus"
 	"github.com/hashicorp/go-multierror"
+	"github.com/sirupsen/logrus"
 )
 
 type BoskosClient interface {
@@ -110,7 +110,7 @@ func (c *Client) ReleaseLeasedResources(name, dest string) error {
 		if err != nil {
 			allErrors = multierror.Append(allErrors, err)
 		}
-		logrus.Info("resource %s has been released to %s", r.Name, res.Name)
+		logrus.Infof("resource %s has been released to %s", r.Name, res.Name)
 	}
 	return allErrors
 }
@@ -139,7 +139,7 @@ func (c *Client) getResources(name string) (*common.Resource, []common.Resource)
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	res, ok := c.resources[name]
-	if ! ok {
+	if !ok {
 		return nil, nil
 	}
 	resources, _ := c.leasedResources[name]

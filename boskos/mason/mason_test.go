@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,7 +90,8 @@ func createFakeBoskos(tc testConfig) (*ranch.Storage, *Client, []common.Resource
 }
 
 func (fb *fakeBoskos) Acquire(rtype, state, dest string) (*common.Resource, error) {
-	return fb.ranch.Acquire(rtype, state, dest, Owner)}
+	return fb.ranch.Acquire(rtype, state, dest, Owner)
+}
 
 func (fb *fakeBoskos) AcquireByState(state, dest string) ([]common.Resource, error) {
 	return fb.ranch.AcquireByState(state, dest, Owner)
@@ -100,7 +102,7 @@ func (fb *fakeBoskos) ReleaseOne(name, dest string) error {
 }
 
 func (fb *fakeBoskos) UpdateOne(name, state string, userData common.UserData) error {
-	return fb.ranch.Update(name, Owner, state, userData )
+	return fb.ranch.Update(name, Owner, state, userData)
 }
 
 func TestRecycleLeasedResources(t *testing.T) {
@@ -118,10 +120,10 @@ func TestRecycleLeasedResources(t *testing.T) {
 	}
 
 	rStorage, mClient, configs := createFakeBoskos(tc)
-	res1, _:= rStorage.GetResource("type1_0")
+	res1, _ := rStorage.GetResource("type1_0")
 	res1.State = "type2_0"
 	rStorage.UpdateResource(res1)
-	res2, _:= rStorage.GetResource("type2_0")
+	res2, _ := rStorage.GetResource("type2_0")
 	res2.UserData.Set(LeasedResources, &[]string{"type1_0"})
 	rStorage.UpdateResource(res2)
 	m := NewMason(masonTypes, 1, mClient, time.Millisecond)
@@ -225,7 +227,7 @@ func TestFulfillOne(t *testing.T) {
 	}
 	*res, _ = rStorage.GetResource(res.Name)
 	var leasedResources common.LeasedResources
-	if res.UserData.Extract(LeasedResources, &leasedResources); err != nil  {
+	if res.UserData.Extract(LeasedResources, &leasedResources); err != nil {
 		t.Errorf("unable to extract %s", LeasedResources)
 	}
 	if len(leasedResources) != 1 {
@@ -255,8 +257,21 @@ func TestMason(t *testing.T) {
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()
-	<-time.After(30 * time.Second)
-	for i:=0; i<10; i++ {
+	<-time.After(3 * time.Second)
+	resources, _ := rStorage.GetResources()
+	for _, r := range resources {
+		switch r.Type {
+		case "type1":
+			if !strings.Contains(r.State, "type2_") {
+				t.Errorf("state should be starting with type2, found %s", r.State)
+			}
+		case "type2":
+			if r.State != common.Free {
+				t.Errorf("state should be %s, found %s", common.Free, r.State)
+			}
+		}
+	}
+	for i := 0; i < 10; i++ {
 		res, resources, err := mClient.AcquireLeasedResources("type2", common.Free, "Used")
 		if err != nil {
 			t.Errorf("Count %d: There should be free resources", i)
@@ -264,16 +279,10 @@ func TestMason(t *testing.T) {
 		if len(resources) != 1 {
 			t.Error("there should be 1 resource of type1")
 		}
-		for _,r := range resources {
-			if r.State != res.Name {
-				t.Errorf("unexpected resource %s state %s", r.Name, r.State)
-			}
+		for _, r := range resources {
 			if r.Type != "type1" {
 				t.Error("resource should be of type type1")
 			}
-		}
-		if res.State != common.Free {
-			t.Errorf("resource %v should be freeOne", res)
 		}
 		if err := mClient.ReleaseLeasedResources(res.Name, common.Dirty); err != nil {
 			t.Error("unable to release leased resources")
@@ -282,12 +291,6 @@ func TestMason(t *testing.T) {
 	}
 	if _, _, err := mClient.AcquireLeasedResources("type2", common.Free, "Used"); err == nil {
 		t.Error("there should not be any resource left")
-	}
-	resources, _ := rStorage.GetResources()
-	for _, res := range resources {
-		if res.State != common.Dirty {
-			t.Errorf("resource %s state should be %s, found %", res.Name, common.Dirty, res.Type)
-		}
 	}
 	m.Stop()
 }

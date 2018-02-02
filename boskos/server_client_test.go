@@ -17,7 +17,7 @@ import (
 // json does not serialized time with nanosecond precision
 func now() time.Time {
 	format := "2006-01-02 15:04:05.000"
-	now, _:= time.Parse(format, time.Now().Format(format))
+	now, _ := time.Parse(format, time.Now().Format(format))
 	return now
 }
 
