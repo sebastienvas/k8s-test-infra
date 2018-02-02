@@ -215,8 +215,8 @@ func handleAcquireByState(r *ranch.Ranch) http.HandlerFunc {
 			}
 			return
 		}
-		logrus.Infof("Resource leased: %v", string(resBytes.Bytes()))
-		fmt.Fprint(res, string(resBytes.Bytes()))
+		logrus.Infof("Resource leased: %v", resBytes.String())
+		fmt.Fprint(res, resBytes.String())
 	}
 }
 

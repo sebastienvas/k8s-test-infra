@@ -142,7 +142,7 @@ func (c *Client) getResources(name string) (*common.Resource, []common.Resource)
 	if !ok {
 		return nil, nil
 	}
-	resources, _ := c.leasedResources[name]
+	resources := c.leasedResources[name]
 	delete(c.resources, name)
 	delete(c.leasedResources, name)
 	return &res, resources

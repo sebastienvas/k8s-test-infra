@@ -44,11 +44,9 @@ func main() {
 
 	if *storagePath != "" {
 		go func() {
-			configTick := time.NewTicker(time.Minute * 10).C
-			for {
-				select {
-				case <-configTick:
-					mason.UpdateConfigs(*storagePath)
+			for range time.NewTicker(time.Minute * 10).C {
+				if err := mason.UpdateConfigs(*storagePath); err != nil {
+					logrus.WithError(err).Warning("failed to update mason config")
 				}
 			}
 		}()

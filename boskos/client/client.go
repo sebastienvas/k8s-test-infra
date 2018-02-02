@@ -82,10 +82,8 @@ func (c *Client) AcquireByState(state, dest string) ([]common.Resource, error) {
 	}
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	if resources != nil {
-		for _, resource := range resources {
-			c.resources = append(c.resources, resource.Name)
-		}
+	for _, resource := range resources {
+		c.resources = append(c.resources, resource.Name)
 	}
 	return resources, nil
 }

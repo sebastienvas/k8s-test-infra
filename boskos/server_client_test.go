@@ -134,7 +134,7 @@ func TestAcquireByState(t *testing.T) {
 		}
 		sort.Sort(common.ResourceByName(receivedRes))
 		if !reflect.DeepEqual(receivedRes, tc.expected) {
-			t.Errorf("tc: %s - resources should match. Expected \n%v, received \n%v", tc.name, tc.expected[1].UserData, receivedRes[1].UserData)
+			t.Errorf("tc: %s - resources should match. Expected \n%v, received \n%v", tc.name, tc.expected, receivedRes)
 		}
 	}
 }

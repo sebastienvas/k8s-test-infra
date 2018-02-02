@@ -34,8 +34,8 @@ import (
 )
 
 const (
-	Group   = "boskos.k8s.io"
-	Version = "v1"
+	group   = "boskos.k8s.io"
+	version = "v1"
 )
 
 var (
@@ -43,12 +43,15 @@ var (
 	namespace  = flag.String("namespace", v1.NamespaceDefault, "namespace to install on")
 )
 
+// Type defines a Custom Resource Definition (CRD) Type.
 type Type struct {
 	Kind, Plural string
 	Object       Object
 	Collection   Collection
 }
 
+// Object extends the runtime.Object interface. CRD are just a representation of the actual boskos object
+// which should implement the common.Item interface.
 type Object interface {
 	runtime.Object
 	GetName() string
@@ -56,6 +59,7 @@ type Object interface {
 	ToItem() common.Item
 }
 
+// Collection is a list of Object interface.
 type Collection interface {
 	runtime.Object
 	SetItems([]Object)
@@ -75,8 +79,8 @@ func CreateRESTConfig(kubeconfig string, t Type) (config *rest.Config, types *ru
 	}
 
 	version := schema.GroupVersion{
-		Group:   Group,
-		Version: Version,
+		Group:   group,
+		Version: version,
 	}
 
 	config.GroupVersion = &version
@@ -105,11 +109,11 @@ func RegisterResource(config *rest.Config, kind, plural string) error {
 
 	crd := &apiextensionsv1beta1.CustomResourceDefinition{
 		ObjectMeta: v1.ObjectMeta{
-			Name: fmt.Sprintf("%s.%s", plural, Group),
+			Name: fmt.Sprintf("%s.%s", plural, group),
 		},
 		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
-			Group:   Group,
-			Version: Version,
+			Group:   group,
+			Version: version,
 			Scope:   apiextensionsv1beta1.NamespaceScoped,
 			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
 				Plural: plural,
@@ -123,11 +127,13 @@ func RegisterResource(config *rest.Config, kind, plural string) error {
 	return nil
 }
 
+// NewClient creates a CRD client for a given resource type.
 func NewClient(cl *rest.RESTClient, scheme *runtime.Scheme, namespace string, t Type) Client {
 	return Client{cl: cl, ns: namespace, t: t,
 		codec: runtime.NewParameterCodec(scheme)}
 }
 
+// NewDummyClient creates a in memory client representation for testing, such that we do not need to use a kubernetes API Server.
 func NewDummyClient(t Type) *DummyClient {
 	c := &DummyClient{
 		t:       t,
@@ -136,7 +142,8 @@ func NewDummyClient(t Type) *DummyClient {
 	return c
 }
 
-func NewClientFromFlag(t Type) (*Client, error) {
+// NewClientFromFlags creates a CRD rest client from provided flags.
+func NewClientFromFlags(t Type) (*Client, error) {
 	config, scheme, err := CreateRESTConfig(*kubeConfig, t)
 	if err != nil {
 		return nil, err
@@ -155,6 +162,7 @@ func NewClientFromFlag(t Type) (*Client, error) {
 	return &rc, nil
 }
 
+// ClientInterface is used for testing.
 type ClientInterface interface {
 	NewObject() Object
 	NewCollection() Collection
@@ -165,6 +173,7 @@ type ClientInterface interface {
 	List(opts v1.ListOptions) (Collection, error)
 }
 
+// DummyClient is used for testing purposes
 type DummyClient struct {
 	objects map[string]Object
 	t       Type

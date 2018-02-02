@@ -40,7 +40,7 @@ var (
 )
 
 func NewResourceClient() (*Client, error) {
-	return NewClientFromFlag(ResourceType)
+	return NewClientFromFlags(ResourceType)
 }
 
 // Resource holds the Resource Data. This is where the data is persisted.
