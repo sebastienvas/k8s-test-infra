@@ -30,10 +30,11 @@ import (
 )
 
 var (
-	BoskosUrl = flag.String("boskos-url", "http://boskos", "Boskos URL")
+	// BoskosURL defines URL where boskos HTTP server is running
+	BoskosURL = flag.String("boskos-url", "http://boskos", "Boskos URL")
 )
 
-// Public Boskos client object
+// Client defines the public Boskos client object
 type Client struct {
 	owner string
 	url   string
@@ -56,7 +57,7 @@ func NewClient(owner string, url string) *Client {
 // public method
 
 // Acquire asks boskos for a resource of certain type in certain state, and set the resource to dest state.
-// Returns name of the resource on success.
+// Returns the resource on success.
 func (c *Client) Acquire(rtype, state, dest string) (*common.Resource, error) {
 	r, err := c.acquire(rtype, state, dest)
 	if err != nil {
@@ -72,8 +73,8 @@ func (c *Client) Acquire(rtype, state, dest string) (*common.Resource, error) {
 	return r, nil
 }
 
-// Acquire asks boskos for a resource of certain type in certain state, and set the resource to dest state.
-// Returns name of the resource on success.
+// AcquireByState asks boskos for a resources of certain type, and set the resource to dest state.
+// Returns a list of resources on success.
 func (c *Client) AcquireByState(state, dest string) ([]common.Resource, error) {
 	resources, err := c.acquireByState(state, dest)
 	if err != nil {

@@ -32,8 +32,6 @@ import (
 
 const (
 	Owner            = "Mason"
-	Cleaning         = "cleaning"
-	Leased           = "leased"
 	DefaultSleepTime = 10 * time.Second
 	LeasedResources  = "LEASED_RESOURCES"
 )
@@ -154,7 +152,7 @@ func ValidateConfig(configs []common.ResourcesConfig, resources []common.Resourc
 }
 
 func NewMasonFromFlags() *Mason {
-	boskosClient := client.NewClient(Owner, *client.BoskosUrl)
+	boskosClient := client.NewClient(Owner, *client.BoskosURL)
 	masonClient := NewClient(boskosClient)
 	logrus.Info("Initialized boskos client!")
 
@@ -275,7 +273,7 @@ func (m *Mason) recycleAll() {
 			return
 		case <-time.After(m.sleepTime):
 			for _, r := range m.typesToClean {
-				if res, resources, err := m.client.AcquireLeasedResources(r, common.Dirty, Cleaning); err != nil {
+				if res, resources, err := m.client.AcquireLeasedResources(r, common.Dirty, common.Cleaning); err != nil {
 					logrus.WithError(err).Debug("boskos acquire failed!")
 				} else {
 					if req, err := m.recycleOne(res, resources); err != nil {
@@ -354,7 +352,7 @@ func (m *Mason) fulfillOne(req *Requirement) error {
 			if m.shutdown {
 				return fmt.Errorf("shutting down")
 			}
-			if res, err := m.client.AcquireLeasedResource(req.resource.Name, rType, common.Free, Leased); err != nil {
+			if res, err := m.client.AcquireLeasedResource(req.resource.Name, rType, common.Free, common.Leased); err != nil {
 				logrus.WithError(err).Debug("boskos acquire failed!")
 			} else {
 				req.fulfillment[rType] = append(req.fulfillment[rType], res)

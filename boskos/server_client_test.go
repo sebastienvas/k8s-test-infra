@@ -40,7 +40,7 @@ func TestAcquireUpdate(t *testing.T) {
 			resource: common.Resource{
 				Type:     "type",
 				Name:     "test",
-				State:    "dirty",
+				State:    common.Dirty,
 				UserData: common.UserData{"test": "old"},
 			},
 		},

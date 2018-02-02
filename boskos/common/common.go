@@ -25,13 +25,22 @@ import (
 )
 
 const (
+	// Busy state defines a resource being used.
+	Busy = "busy"
+	// Dirty state defines a resource that needs cleaning
 	Dirty = "dirty"
-	Free  = "free"
+	// Free state defines a resource that is usable
+	Free = "free"
+	// Cleaning state defines a resource being cleaned
+	Cleaning = "cleaning"
+	// Leased state defines a resource being leased in order to make a new resource
+	Leased = "leased"
 )
 
 // UserData is a map of Name to user defined interface, serialized into a string
 type UserData map[string]string
 
+// LeasedResources is a list of resources name that used in order to create another resource by Mason
 type LeasedResources []string
 
 // Item interfaces for resources and configs
@@ -39,6 +48,7 @@ type Item interface {
 	GetName() string
 }
 
+// Resource abstracts any resource type that can be tracked by boskos
 type Resource struct {
 	Type       string    `json:"type"`
 	Name       string    `json:"name"`
@@ -46,7 +56,7 @@ type Resource struct {
 	Owner      string    `json:"owner"`
 	LastUpdate time.Time `json:"lastupdate"`
 	// Information on how to use the resource
-	UserData UserData `json:"userdata,omitempty"`
+	UserData UserData `json:"userdata"`
 }
 
 // ResourceEntry is resource config format defined from config.yaml
@@ -56,10 +66,12 @@ type ResourceEntry struct {
 	Names []string `json:"names,flow"`
 }
 
+// BoskosConfig defines config used by boskos server
 type BoskosConfig struct {
 	Resources []ResourceEntry `json:"resources,flow"`
 }
 
+// Metric contains analytics about a specific resource type
 type Metric struct {
 	Type    string         `json:"type"`
 	Current map[string]int `json:"current"`
@@ -67,6 +79,7 @@ type Metric struct {
 	// TODO: Implement state transition metrics
 }
 
+// NewResource creates a new Boskos Resource.
 func NewResource(name, rtype, state, owner string, t time.Time) Resource {
 	return Resource{
 		Name:       name,
@@ -78,6 +91,7 @@ func NewResource(name, rtype, state, owner string, t time.Time) Resource {
 	}
 }
 
+// NewResourcesFromConfig parse the a ResourceEntry into a list of resources
 func NewResourcesFromConfig(e ResourceEntry) []Resource {
 	var resources []Resource
 	for _, name := range e.Names {
@@ -86,7 +100,7 @@ func NewResourcesFromConfig(e ResourceEntry) []Resource {
 	return resources
 }
 
-// UserNotFound will be returned if requested resource does not exist.
+// UserDataNotFound will be returned if requested resource does not exist.
 type UserDataNotFound struct {
 	ID string
 }
@@ -95,24 +109,28 @@ func (ud *UserDataNotFound) Error() string {
 	return fmt.Sprintf("user data ID %s does not exist", ud.ID)
 }
 
+// ResourceByUpdateTime helps sorting resources by update time
 type ResourceByUpdateTime []Resource
 
 func (ut ResourceByUpdateTime) Len() int           { return len(ut) }
 func (ut ResourceByUpdateTime) Swap(i, j int)      { ut[i], ut[j] = ut[j], ut[i] }
 func (ut ResourceByUpdateTime) Less(i, j int) bool { return ut[i].LastUpdate.Before(ut[j].LastUpdate) }
 
+// ResourceByName helps sorting resources by name
 type ResourceByName []Resource
 
 func (ut ResourceByName) Len() int           { return len(ut) }
 func (ut ResourceByName) Swap(i, j int)      { ut[i], ut[j] = ut[j], ut[i] }
 func (ut ResourceByName) Less(i, j int) bool { return ut[i].GetName() < ut[j].GetName() }
 
+// ResTypes is used to parse flags for a list of types
 type ResTypes []string
 
 func (r *ResTypes) String() string {
 	return fmt.Sprint(*r)
 }
 
+// Set parses the flag value into a ResTypes
 func (r *ResTypes) Set(value string) error {
 	if len(*r) > 0 {
 		return errors.New("resTypes flag already set")
@@ -123,8 +141,10 @@ func (r *ResTypes) Set(value string) error {
 	return nil
 }
 
+// GetName implement the Item interface used for storage
 func (res Resource) GetName() string { return res.Name }
 
+// Extract unmarshalls a string a given struct if it exists
 func (ud UserData) Extract(id string, out interface{}) error {
 	content, ok := ud[id]
 	if !ok {
@@ -133,6 +153,7 @@ func (ud UserData) Extract(id string, out interface{}) error {
 	return json.Unmarshal([]byte(content), out)
 }
 
+// Set marshalls a struct to a string into the UserData
 func (ud UserData) Set(id string, in interface{}) error {
 	b, err := json.Marshal(in)
 	if err != nil {
@@ -142,6 +163,8 @@ func (ud UserData) Set(id string, in interface{}) error {
 	return nil
 }
 
+// Update updates existing UserData with new UserData.
+// If a key as an empty string, the key will be deleted
 func (ud UserData) Update(new UserData) {
 	if new != nil {
 		for id, content := range new {
@@ -154,7 +177,8 @@ func (ud UserData) Update(new UserData) {
 	}
 }
 
-func ItemToResource(i interface{}) (Resource, error) {
+// ItemToResource casts a Item back to a Resource
+func ItemToResource(i Item) (Resource, error) {
 	res, ok := i.(Resource)
 	if !ok {
 		return Resource{}, fmt.Errorf("cannot construct Resource from received object %v", i)

@@ -74,7 +74,7 @@ func createFakeBoskos(tc testConfig) (*ranch.Storage, *Client, []common.Resource
 				if _, ok := configNames[rtype]; !ok {
 					configNames[rtype] = true
 					configs = append(configs, common.ResourcesConfig{
-						Config: common.TypedContent{
+						Config: common.ConfigType{
 							Type:    fakeConfigType,
 							Content: emptyContent,
 						},
@@ -139,7 +139,7 @@ func TestRecycleLeasedResources(t *testing.T) {
 	m.Stop()
 	res1, _ = rStorage.GetResource("type1_0")
 	res2, _ = rStorage.GetResource("type2_0")
-	if res2.State != Cleaning {
+	if res2.State != common.Cleaning {
 		t.Errorf("Resource state should be cleaning")
 	}
 	if res1.State != common.Dirty {
@@ -175,7 +175,7 @@ func TestRecycleNoLeasedResources(t *testing.T) {
 	m.Stop()
 	res1, _ := rStorage.GetResource("type1_0")
 	res2, _ := rStorage.GetResource("type2_0")
-	if res2.State != Cleaning {
+	if res2.State != common.Cleaning {
 		t.Errorf("Resource state should be cleaning")
 	}
 	if res1.State != common.Free {
@@ -200,7 +200,7 @@ func TestFulfillOne(t *testing.T) {
 	rStorage, mClient, configs := createFakeBoskos(tc)
 	m := NewMason(masonTypes, 1, mClient, time.Millisecond)
 	m.storage.SyncConfigs(configs)
-	res, _ := mClient.basic.Acquire("type2", common.Dirty, Cleaning)
+	res, _ := mClient.basic.Acquire("type2", common.Dirty, common.Cleaning)
 	conf, err := m.storage.GetConfig("type2")
 	if err != nil {
 		t.Error("failed to get config")
@@ -221,7 +221,7 @@ func TestFulfillOne(t *testing.T) {
 	}
 	userRes := req.fulfillment["type1"][0]
 	leasedResource, _ := rStorage.GetResource(userRes.Name)
-	if leasedResource.State != Leased {
+	if leasedResource.State != common.Leased {
 
 		t.Errorf("State should be Leased")
 	}
@@ -334,7 +334,7 @@ func makeFakeConfig(name, cType, content string, needs int) common.ResourcesConf
 	c := common.ResourcesConfig{
 		Name:  name,
 		Needs: common.ResourceNeeds{},
-		Config: common.TypedContent{
+		Config: common.ConfigType{
 			Type:    cType,
 			Content: content,
 		},
@@ -459,7 +459,7 @@ func TestGetConfig(t *testing.T) {
 			configs: []common.ResourcesConfig{
 				{
 					Needs: common.ResourceNeeds{"type1": 1, "type2": 2},
-					Config: common.TypedContent{
+					Config: common.ConfigType{
 						Type:    "type3",
 						Content: "content",
 					},
@@ -479,7 +479,7 @@ func TestGetConfig(t *testing.T) {
 			configs: []common.ResourcesConfig{
 				{
 					Needs: common.ResourceNeeds{"type1": 1, "type2": 2},
-					Config: common.TypedContent{
+					Config: common.ConfigType{
 						Type:    "type3",
 						Content: "content",
 					},
@@ -487,7 +487,7 @@ func TestGetConfig(t *testing.T) {
 				},
 				{
 					Needs: common.ResourceNeeds{"type1": 1, "type2": 2},
-					Config: common.TypedContent{
+					Config: common.ConfigType{
 						Type:    "type3",
 						Content: "content",
 					},
@@ -502,7 +502,7 @@ func TestGetConfig(t *testing.T) {
 			configs: []common.ResourcesConfig{
 				{
 					Needs: common.ResourceNeeds{"type1": 1, "type2": 2},
-					Config: common.TypedContent{
+					Config: common.ConfigType{
 						Type:    "type3",
 						Content: "content",
 					},
@@ -510,7 +510,7 @@ func TestGetConfig(t *testing.T) {
 				},
 				{
 					Needs: common.ResourceNeeds{"type1": 1, "type2": 2},
-					Config: common.TypedContent{
+					Config: common.ConfigType{
 						Type:    "type3",
 						Content: "content",
 					},

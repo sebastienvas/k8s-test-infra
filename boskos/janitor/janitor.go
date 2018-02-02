@@ -45,7 +45,7 @@ func main() {
 	flag.Parse()
 
 	logrus.SetFormatter(&logrus.JSONFormatter{})
-	boskos := client.NewClient("Janitor", *client.BoskosUrl)
+	boskos := client.NewClient("Janitor", *client.BoskosURL)
 	logrus.Info("Initialized boskos client!")
 
 	if *serviceAccount == "" {
@@ -105,7 +105,7 @@ func run(c boskosClient, buffer chan string, rtypes []string) int {
 
 	for {
 		for r := range res {
-			if projRes, err := c.Acquire(r, "dirty", "cleaning"); err != nil {
+			if projRes, err := c.Acquire(r, common.Dirty, common.Cleaning); err != nil {
 				logrus.WithError(err).Error("boskos acquire failed!")
 				totalAcquire += res[r]
 				delete(res, r)
@@ -134,10 +134,10 @@ func janitor(c boskosClient, buffer chan string, fn clean) {
 	for {
 		proj := <-buffer
 
-		dest := "free"
+		dest := common.Free
 		if err := fn(proj); err != nil {
 			logrus.WithError(err).Error("janitor.py failed!")
-			dest = "dirty"
+			dest = common.Dirty
 		}
 
 		if err := c.ReleaseOne(proj, dest); err != nil {

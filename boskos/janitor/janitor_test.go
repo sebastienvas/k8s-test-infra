@@ -43,7 +43,7 @@ func CreateFakeBoskos(resources int, types []string) *fakeBoskos {
 			common.Resource{
 				Name:  fmt.Sprintf("res-%d", i),
 				Type:  types[r.Intn(len(types))],
-				State: "dirty",
+				State: common.Dirty,
 			})
 	}
 
@@ -125,7 +125,7 @@ func TestNormal(t *testing.T) {
 	}
 
 	for _, r := range fb.resources {
-		if r.State != "free" {
+		if r.State != common.Free {
 			t.Errorf("resource %v, expect state free, got state %v", r.Name, r.State)
 		}
 	}
@@ -142,7 +142,7 @@ func FakeRun(fb *fakeBoskos, buffer chan string, res string) (int, error) {
 		case <-timeout:
 			return totalClean, errors.New("should not timedout")
 		default:
-			if projRes, err := fb.Acquire(res, "dirty", "cleaning"); err != nil {
+			if projRes, err := fb.Acquire(res, common.Dirty, common.Cleaning); err != nil {
 				return totalClean, fmt.Errorf("acquire failed with %v", err)
 			} else if projRes.Name == "" {
 				return totalClean, errors.New("not expect to run out of resources")

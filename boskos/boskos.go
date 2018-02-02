@@ -78,6 +78,7 @@ func main() {
 	logrus.WithError(boskos.ListenAndServe()).Fatal("ListenAndServe returned.")
 }
 
+//NewBoskosHandler constructs the boskos handler.
 func NewBoskosHandler(r *ranch.Ranch) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle("/", handleDefault(r))

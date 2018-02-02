@@ -26,37 +26,40 @@ type ResourceNeeds map[string]int
 // TypeToResources stores all the leased resources with the same type f
 type TypeToResources map[string][]*Resource
 
-type TypedContent struct {
+// ConfigType gather the type of config to be applied by Mason in order to construct the resource
+type ConfigType struct {
 	// Identifier of the struct this maps back to
 	Type string `json:"type,omitempty"`
 	// Marshaled JSON content
 	Content string `json:"content,omitempty"`
 }
 
-type ResourceInfo struct {
-	LeasedResources []string     `json:"leasedresouces,omitempty"`
-	Info            TypedContent `json:"info,omitempty"`
-}
-
+// MasonConfig holds Mason config information
 type MasonConfig struct {
 	Configs []ResourcesConfig `json:"configs,flow,omitempty"`
 }
 
+// ResourcesConfig holds information to construct a resource.
+// The ResourcesConfig Name maps to the Resource Type
+// All Resource of a given type will be constructed using the same configuration
 type ResourcesConfig struct {
 	Name   string        `json:"name"`
-	Config TypedContent  `json:"config"`
+	Config ConfigType    `json:"config"`
 	Needs  ResourceNeeds `json:"needs"`
 }
 
+// ResourcesConfigByName helps sorting ResourcesConfig by name
 type ResourcesConfigByName []ResourcesConfig
 
 func (ut ResourcesConfigByName) Len() int           { return len(ut) }
 func (ut ResourcesConfigByName) Swap(i, j int)      { ut[i], ut[j] = ut[j], ut[i] }
 func (ut ResourcesConfigByName) Less(i, j int) bool { return ut[i].GetName() < ut[j].GetName() }
 
+// GetName implement the item interface for storage
 func (conf ResourcesConfig) GetName() string { return conf.Name }
 
-func ItemToResourcesConfig(i interface{}) (ResourcesConfig, error) {
+// ItemToResourcesConfig casts an Item object to a ResourcesConfig
+func ItemToResourcesConfig(i Item) (ResourcesConfig, error) {
 	conf, ok := i.(ResourcesConfig)
 	if !ok {
 		return ResourcesConfig{}, fmt.Errorf("cannot construct Resource from received object %v", i)

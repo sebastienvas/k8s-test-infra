@@ -116,7 +116,7 @@ func TestAcquire(t *testing.T) {
 			expectErr: &ResourceNotFound{"t"},
 		},
 		{
-			name: "busy",
+			name: common.Busy,
 			resources: []common.Resource{
 				common.NewResource("res", "t", "s", "foo", FakeNow),
 			},
@@ -395,7 +395,7 @@ func TestUpdate(t *testing.T) {
 			resName:   "res",
 			owner:     "user",
 			state:     "s",
-			expectErr: &OwnerNotMatch{"merlin", "user"},
+			expectErr: &OwnerNotMatch{"user", "merlin"},
 		},
 		{
 			name: "wrong state",
@@ -555,7 +555,7 @@ func TestSyncResources(t *testing.T) {
 				common.NewResource("res", "t", "", "", time.Time{}),
 			},
 			expect: []common.Resource{
-				common.NewResource("res", "t", "free", "", time.Time{}),
+				common.NewResource("res", "t", common.Free, "", time.Time{}),
 			},
 		},
 		{
@@ -579,10 +579,10 @@ func TestSyncResources(t *testing.T) {
 		{
 			name: "delete busy",
 			oldRes: []common.Resource{
-				common.NewResource("res", "t", "busy", "o", time.Time{}),
+				common.NewResource("res", "t", common.Busy, "o", time.Time{}),
 			},
 			expect: []common.Resource{
-				common.NewResource("res", "t", "busy", "o", time.Time{}),
+				common.NewResource("res", "t", common.Busy, "o", time.Time{}),
 			},
 		},
 		{
@@ -594,20 +594,20 @@ func TestSyncResources(t *testing.T) {
 				common.NewResource("res-2", "t", "", "", time.Time{}),
 			},
 			expect: []common.Resource{
-				common.NewResource("res-2", "t", "free", "", time.Time{}),
+				common.NewResource("res-2", "t", common.Free, "", time.Time{}),
 			},
 		},
 		{
 			name: "append and delete busy",
 			oldRes: []common.Resource{
-				common.NewResource("res-1", "t", "busy", "o", time.Time{}),
+				common.NewResource("res-1", "t", common.Busy, "o", time.Time{}),
 			},
 			newRes: []common.Resource{
 				common.NewResource("res-2", "t", "", "", time.Time{}),
 			},
 			expect: []common.Resource{
-				common.NewResource("res-1", "t", "busy", "o", time.Time{}),
-				common.NewResource("res-2", "t", "free", "", time.Time{}),
+				common.NewResource("res-1", "t", common.Busy, "o", time.Time{}),
+				common.NewResource("res-2", "t", common.Free, "", time.Time{}),
 			},
 		},
 		{

@@ -46,7 +46,7 @@ type ResourcesConfig struct {
 }
 
 type ResourcesConfigSpec struct {
-	Config common.TypedContent  `json:"config"`
+	Config common.ConfigType    `json:"config"`
 	Needs  common.ResourceNeeds `json:"resourceneeds"`
 }
 
