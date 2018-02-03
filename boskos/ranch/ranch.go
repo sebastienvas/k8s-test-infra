@@ -157,9 +157,6 @@ func (r *Ranch) AcquireByState(state, dest, owner string) ([]common.Resource, er
 			resources = append(resources, res)
 		}
 	}
-	if len(resources) == 0 {
-		return nil, &ResourceNotFound{state}
-	}
 	return resources, nil
 }
 

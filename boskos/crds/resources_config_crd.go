@@ -63,8 +63,8 @@ type ResourcesConfigSpec struct {
 
 // ResourcesConfigCollection implement the Collections interface
 type ResourcesConfigCollection struct {
-	v1.TypeMeta                          `json:",inline"`
-	v1.ListMeta                          `json:"metadata,omitempty"`
+	v1.TypeMeta `json:",inline"`
+	v1.ListMeta `json:"metadata,omitempty"`
 	Items       []*ResourcesConfigObject `json:"items"`
 }
 
@@ -88,6 +88,7 @@ func (in *ResourcesConfigObject) deepCopy() *ResourcesConfigObject {
 	in.deepCopyInto(out)
 	return out
 }
+
 // DeepCopyObject implement the runtime.Object interface
 func (in *ResourcesConfigObject) DeepCopyObject() runtime.Object {
 	if c := in.deepCopy(); c != nil {

@@ -17,9 +17,9 @@ limitations under the License.
 package common
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"gopkg.in/yaml.v2"
 	"strings"
 	"time"
 )
@@ -150,12 +150,12 @@ func (ud UserData) Extract(id string, out interface{}) error {
 	if !ok {
 		return &UserDataNotFound{id}
 	}
-	return json.Unmarshal([]byte(content), out)
+	return yaml.Unmarshal([]byte(content), out)
 }
 
 // Set marshalls a struct to a string into the UserData
 func (ud UserData) Set(id string, in interface{}) error {
-	b, err := json.Marshal(in)
+	b, err := yaml.Marshal(in)
 	if err != nil {
 		return err
 	}

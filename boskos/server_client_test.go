@@ -91,7 +91,6 @@ func TestAcquireByState(t *testing.T) {
 			resources: []common.Resource{
 				common.NewResource("test", "type", common.Dirty, "", time.Time{}),
 			},
-			err: fmt.Errorf("resource not found"),
 		},
 		{
 			name:  "existing",

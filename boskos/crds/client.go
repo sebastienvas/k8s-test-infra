@@ -260,6 +260,7 @@ func (c *Client) NewObject() Object {
 func (c *Client) NewCollection() Collection {
 	return c.t.Collection.DeepCopyObject().(Collection)
 }
+
 // Create implements ClientInterface
 func (c *Client) Create(obj Object) (Object, error) {
 	result := c.NewObject()
@@ -272,6 +273,7 @@ func (c *Client) Create(obj Object) (Object, error) {
 		Into(result)
 	return result, err
 }
+
 // Update implements ClientInterface
 func (c *Client) Update(obj Object) (Object, error) {
 	result := c.NewObject()

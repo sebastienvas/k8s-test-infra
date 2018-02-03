@@ -234,8 +234,6 @@ func (c *Client) acquireByState(state, dest string) ([]common.Resource, error) {
 			return nil, err
 		}
 		return resources, nil
-	} else if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("resource not found")
 	} else if resp.StatusCode == http.StatusUnauthorized {
 		return nil, fmt.Errorf("resources already used by another user")
 	}

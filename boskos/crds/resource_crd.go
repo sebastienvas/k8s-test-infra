@@ -59,8 +59,8 @@ type ResourceObject struct {
 
 // ResourceCollection is the Collection implementation
 type ResourceCollection struct {
-	v1.TypeMeta                   `json:",inline"`
-	v1.ListMeta                   `json:"metadata,omitempty"`
+	v1.TypeMeta `json:",inline"`
+	v1.ListMeta `json:"metadata,omitempty"`
 	Items       []*ResourceObject `json:"items"`
 }
 
@@ -148,6 +148,7 @@ func (in *ResourceCollection) GetItems() []Object {
 	}
 	return items
 }
+
 // SetItems implements Collection interface
 func (in *ResourceCollection) SetItems(objects []Object) {
 	var items []*ResourceObject

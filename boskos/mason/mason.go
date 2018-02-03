@@ -24,18 +24,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/sirupsen/logrus"
 	"k8s.io/test-infra/boskos/client"
 	"k8s.io/test-infra/boskos/common"
 	"k8s.io/test-infra/boskos/storage"
-	"github.com/hashicorp/go-multierror"
 )
 
 const (
 	owner            = "Mason"
 	defaultSleepTime = 10 * time.Second
 	// LeasedResources is a common.UserData entry
-	LeasedResources  = "LEASED_RESOURCES"
+	LeasedResources = "LEASED_RESOURCES"
 )
 
 var (
@@ -160,10 +160,8 @@ func ValidateConfig(configs []common.ResourcesConfig, resources []common.Resourc
 // NewMasonFromFlags creates a new Mason from flags
 func NewMasonFromFlags() *Mason {
 	boskosClient := client.NewClient(owner, *client.BoskosURL)
-	masonClient := NewClient(boskosClient)
 	logrus.Info("Initialized boskos client!")
-
-	return newMason(rTypes, *channelBufferSize, masonClient, defaultSleepTime)
+	return newMason(rTypes, *channelBufferSize, boskosClient, defaultSleepTime)
 }
 
 func newMason(rtypes []string, channelSize int, client boskosClient, sleepTime time.Duration) *Mason {
@@ -302,8 +300,7 @@ func (m *Mason) recycleAll() {
 				} else {
 					if req, err := m.recycleOne(res); err != nil {
 						logrus.WithError(err).Errorf("unable to recycle resource %s", res.Name)
-						err := m.client.ReleaseOne(res.Name, common.Dirty)
-						if err != nil {
+						if err := m.client.ReleaseOne(res.Name, common.Dirty); err != nil {
 							logrus.WithError(err).Errorf("Unable to release resources %s", res.Name)
 						}
 					} else {
@@ -321,30 +318,15 @@ func (m *Mason) recycleOne(res *common.Resource) (*requirements, error) {
 		logrus.WithError(err).Errorf("could not get config for resource type %s", res.Type)
 		return nil, err
 	}
-
-	var leasedResources common.LeasedResources
-	if err := res.UserData.Extract(LeasedResources, &leasedResources); err != nil {
-		if _, ok := err.(*common.UserDataNotFound); !ok {
-			logrus.WithError(err).Warning("cannot parse %s from User Data", LeasedResources)
-			resources, err := m.client.AcquireByState(res.Name, common.Leased)
-			if err != nil {
-				logrus.WithError(err).Warningf("could not acquire any leased resources for %s", res.Name)
-			}
-			for _, r := range resources {
-				leasedResources = append(leasedResources, r.Name)
-			}
-		}
+	resources, err := m.client.AcquireByState(res.Name, common.Leased)
+	if err != nil {
+		logrus.WithError(err).Warningf("could not acquire any leased resources for %s", res.Name)
 	}
 
-	// Releasing leased resources
-	var allErrors error
-	for _, lr := range leasedResources {
-		if err := m.client.ReleaseOne(lr, common.Dirty); err != nil {
-			logrus.WithError(err).Warning("could not release resource %s", lr)
+	for _, r := range resources {
+		if err := m.client.ReleaseOne(r.Name, common.Dirty); err != nil {
+			logrus.WithError(err).Warningf("could not release resource %s", r.Name)
 		}
-	}
-	if allErrors != nil {
-		return nil, allErrors
 	}
 	// Deleting Leased Resources
 	delete(res.UserData, LeasedResources)

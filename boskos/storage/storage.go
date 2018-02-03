@@ -43,7 +43,6 @@ type inClusterStorage struct {
 	client crds.ClientInterface
 }
 
-
 type inMemoryStore struct {
 	items map[string]common.Item
 	lock  sync.RWMutex
