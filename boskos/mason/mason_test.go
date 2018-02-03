@@ -133,7 +133,7 @@ func TestRecycleLeasedResources(t *testing.T) {
 	select {
 	case <-m.pending:
 		break
-	case <-time.After(5 * time.Second):
+	case <-time.After(1 * time.Second):
 		t.Errorf("Timeout")
 	}
 	m.Stop()
@@ -169,7 +169,7 @@ func TestRecycleNoLeasedResources(t *testing.T) {
 	select {
 	case <-m.pending:
 		break
-	case <-time.After(5 * time.Second):
+	case <-time.After(1 * time.Second):
 		t.Errorf("Timeout")
 	}
 	m.Stop()
@@ -257,7 +257,7 @@ func TestMason(t *testing.T) {
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()
-	<-time.After(3 * time.Second)
+	<-time.After(4 * time.Second)
 	resources, _ := rStorage.GetResources()
 	for _, r := range resources {
 		switch r.Type {
