@@ -2,17 +2,12 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "go_default_library",
-    srcs = [
-        "crd_storage.go",
-        "memory_storage.go",
-        "storage.go",
-    ],
+    srcs = ["storage.go"],
     importpath = "k8s.io/test-infra/boskos/storage",
     visibility = ["//visibility:public"],
     deps = [
         "//boskos/common:go_default_library",
         "//boskos/crds:go_default_library",
-        "//vendor/github.com/sirupsen/logrus:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
     ],
 )

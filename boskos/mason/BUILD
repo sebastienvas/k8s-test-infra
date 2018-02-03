@@ -30,7 +30,6 @@ go_test(
         "//boskos/common:go_default_library",
         "//boskos/ranch:go_default_library",
         "//boskos/storage:go_default_library",
-        "//vendor/github.com/sirupsen/logrus:go_default_library",
     ],
 )
 
