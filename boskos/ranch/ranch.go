@@ -122,7 +122,7 @@ func (r *Ranch) Acquire(rType, state, dest, owner string) (*common.Resource, err
 	return nil, &ResourceNotFound{rType}
 }
 
-// AcquireByStatte checks out resources of a given typewithout an owner,
+// AcquireByState checks out resources of a given typewithout an owner,
 // and move the checked out resource to the end of the resource list.
 // In: state - current state of the requested resource
 //     dest - destination state of the requested resource

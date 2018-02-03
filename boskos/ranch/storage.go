@@ -30,12 +30,15 @@ import (
 	"k8s.io/test-infra/boskos/storage"
 )
 
+// Storage is used to decouple ranch functionality with the resource persistence layer
 type Storage struct {
-	resources     storage.Interface
+	resources     storage.PersistenceLayer
 	resourcesLock sync.RWMutex
 }
 
-func NewStorage(r storage.Interface, storage string) (*Storage, error) {
+// NewStorage instantiates a new Storage with a PersistenceLayer implementation
+// If storage string is not empty, it will read resource data from the file
+func NewStorage(r storage.PersistenceLayer, storage string) (*Storage, error) {
 	s := &Storage{
 		resources: r,
 	}
@@ -63,18 +66,22 @@ func NewStorage(r storage.Interface, storage string) (*Storage, error) {
 	return s, nil
 }
 
+// AddResource adds a new resource
 func (s *Storage) AddResource(resource common.Resource) error {
 	return s.resources.Add(resource)
 }
 
+// DeleteResource deletes a resource if it exists, errors otherwise
 func (s *Storage) DeleteResource(name string) error {
 	return s.resources.Delete(name)
 }
 
+// UpdateResource updates a resource if it exists, errors otherwise
 func (s *Storage) UpdateResource(resource common.Resource) error {
 	return s.resources.Update(resource)
 }
 
+// GetResource gets an existing resource, errors otherwise
 func (s *Storage) GetResource(name string) (common.Resource, error) {
 	i, err := s.resources.Get(name)
 	if err != nil {
@@ -88,6 +95,7 @@ func (s *Storage) GetResource(name string) (common.Resource, error) {
 	return res, nil
 }
 
+// GetResources list all resources
 func (s *Storage) GetResources() ([]common.Resource, error) {
 	var resources []common.Resource
 	items, err := s.resources.List()
@@ -106,7 +114,7 @@ func (s *Storage) GetResources() ([]common.Resource, error) {
 	return resources, nil
 }
 
-// Boskos resource config will be updated every 10 mins.
+// SyncResources will update resources every 10 mins.
 // It will append newly added resources to ranch.Resources,
 // And try to remove newly deleted resources from ranch.Resources.
 // If the newly deleted resource is currently held by a user, the deletion will

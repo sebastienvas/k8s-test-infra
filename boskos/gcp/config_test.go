@@ -24,11 +24,11 @@ import (
 )
 
 func TestParseConfig(t *testing.T) {
-	expected := ResourcesConfig{
-		ProjectConfigs: []ProjectConfig{
+	expected := resourcesConfig{
+		ProjectConfigs: []projectConfig{
 			{
 				Type: "type1",
-				Clusters: []GKEClusterConfig{
+				Clusters: []clusterConfig{
 					{
 						MachineType: "n1-standard-2",
 						NumNodes:    4,
@@ -36,7 +36,7 @@ func TestParseConfig(t *testing.T) {
 						Zone:        "us-central-1f",
 					},
 				},
-				Vms: []GCEVMConfig{
+				Vms: []virtualMachineConfig{
 					{
 						MachineType: "n1-standard-4",
 						SourceImage: "projects/debian-cloud/global/images/debian-9-stretch-v20180105",
@@ -57,11 +57,11 @@ func TestParseConfig(t *testing.T) {
 	if err != nil {
 		t.Error("could not parse config")
 	}
-	config, err := configConverter(conf[0].Config.Content)
+	config, err := ConfigConverter(conf[0].Config.Content)
 	if err != nil {
 		t.Errorf("cannot parse object")
 	} else {
-		if !reflect.DeepEqual(expected, *config) {
+		if !reflect.DeepEqual(expected, *config.(*resourcesConfig)) {
 			t.Error("Object differ")
 		}
 	}

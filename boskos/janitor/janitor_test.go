@@ -35,7 +35,7 @@ type fakeBoskos struct {
 }
 
 // Create a fake client
-func CreateFakeBoskos(resources int, types []string) *fakeBoskos {
+func createFakeBoskos(resources int, types []string) *fakeBoskos {
 	fb := &fakeBoskos{}
 	r := rand.New(rand.NewSource(99))
 	for i := 0; i < resources; i++ {
@@ -107,7 +107,7 @@ func TestNormal(t *testing.T) {
 	}
 
 	types := []string{"a", "b", "c", "d"}
-	fb := CreateFakeBoskos(1000, types)
+	fb := createFakeBoskos(1000, types)
 
 	buffer := setup(fb, poolSize, bufferSize, fakeClean)
 	totalAcquire := run(fb, buffer, []string{"t"})
@@ -171,7 +171,7 @@ func TestMalfunctionJanitor(t *testing.T) {
 		return nil
 	}
 
-	fb := CreateFakeBoskos(200, []string{"t"})
+	fb := createFakeBoskos(200, []string{"t"})
 
 	buffer := setup(fb, poolSize, bufferSize, fakeClean)
 

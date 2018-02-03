@@ -26,9 +26,9 @@ import (
 	"reflect"
 )
 
-func createStorages() []Interface {
-	return []Interface{
-		NewCRDStorage(crds.NewDummyClient(crds.ResourceType)),
+func createStorages() []PersistenceLayer {
+	return []PersistenceLayer{
+		NewCRDStorage(crds.NewTestResourceClient()),
 		NewMemoryStorage(),
 	}
 }

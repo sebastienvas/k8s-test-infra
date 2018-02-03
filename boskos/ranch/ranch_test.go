@@ -28,7 +28,7 @@ import (
 )
 
 func MakeTestRanch(resources []common.Resource) *Ranch {
-	rs := storage.NewCRDStorage(crds.NewDummyClient(crds.ResourceType))
+	rs := storage.NewCRDStorage(crds.NewTestResourceClient())
 	s, _ := NewStorage(rs, "")
 	for _, res := range resources {
 		s.AddResource(res)

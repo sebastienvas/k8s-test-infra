@@ -17,16 +17,21 @@ limitations under the License.
 package storage
 
 import (
-	"encoding/json"
-	"io/ioutil"
-	"os"
-	"sort"
+	"sync"
 
-	"github.com/sirupsen/logrus"
+	"fmt"
 	"k8s.io/test-infra/boskos/common"
+	"k8s.io/test-infra/boskos/crds"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type Interface interface {
+const (
+	deleteGracePeriodSeconds = 10
+)
+
+// PersistenceLayer defines a simple interface to persists Boskos Information
+type PersistenceLayer interface {
 	Add(i common.Item) error
 	Delete(name string) error
 	Update(i common.Item) error
@@ -34,121 +39,117 @@ type Interface interface {
 	List() ([]common.Item, error)
 }
 
-type Storage struct {
-	resources Interface
-	configs   Interface
+type inClusterStorage struct {
+	client crds.ClientInterface
 }
 
-func NewStorage(c, r Interface, storage string) (*Storage, error) {
-	s := &Storage{
-		resources: r,
-		configs:   c,
+
+type inMemoryStore struct {
+	items map[string]common.Item
+	lock  sync.RWMutex
+}
+
+// NewMemoryStorage creates an in memory persistence layer
+func NewMemoryStorage() PersistenceLayer {
+	return &inMemoryStore{
+		items: map[string]common.Item{},
 	}
+}
 
-	if storage != "" {
-		var data struct {
-			resources []common.Resource
-		}
-		buf, err := ioutil.ReadFile(storage)
-		if err == nil {
-			logrus.Infof("Current state: %v.", buf)
-			err = json.Unmarshal(buf, &data)
-			if err != nil {
-				return nil, err
-			}
-		} else if !os.IsNotExist(err) {
-			return nil, err
-		}
-		for _, res := range data.resources {
-			if err := s.AddResource(res); err != nil {
-				return nil, err
-			}
-		}
+// NewCRDStorage creates a Custom Resource Definition persistence layer
+func NewCRDStorage(client crds.ClientInterface) PersistenceLayer {
+	return &inClusterStorage{
+		client: client,
 	}
-	return s, nil
 }
 
-func (s *Storage) AddResource(resource common.Resource) error {
-	return s.resources.Add(resource)
+func (im *inMemoryStore) Add(i common.Item) error {
+	im.lock.Lock()
+	defer im.lock.Unlock()
+	im.items[i.GetName()] = i
+	return nil
 }
 
-func (s *Storage) DeleteResource(name string) error {
-	return s.resources.Delete(name)
+func (im *inMemoryStore) Delete(name string) error {
+	im.lock.Lock()
+	defer im.lock.Unlock()
+	_, ok := im.items[name]
+	if !ok {
+		return fmt.Errorf("cannot find item %s", name)
+	}
+	delete(im.items, name)
+	return nil
 }
 
-func (s *Storage) UpdateResource(resource common.Resource) error {
-	return s.resources.Update(resource)
+func (im *inMemoryStore) Update(i common.Item) error {
+	im.lock.Lock()
+	defer im.lock.Unlock()
+	_, ok := im.items[i.GetName()]
+	if !ok {
+		return fmt.Errorf("cannot find item %s", i.GetName())
+	}
+	im.items[i.GetName()] = i
+	return nil
 }
 
-func (s *Storage) GetResource(name string) (common.Resource, error) {
-	i, err := s.resources.Get(name)
+func (im *inMemoryStore) Get(name string) (common.Item, error) {
+	im.lock.Lock()
+	defer im.lock.Unlock()
+	i, ok := im.items[name]
+	if !ok {
+		return nil, fmt.Errorf("cannot find item %s", name)
+	}
+	return i, nil
+}
+
+func (im *inMemoryStore) List() ([]common.Item, error) {
+	im.lock.Lock()
+	defer im.lock.Unlock()
+	var items []common.Item
+	for _, i := range im.items {
+		items = append(items, i)
+	}
+	return items, nil
+}
+
+func (cs *inClusterStorage) Add(i common.Item) error {
+	o := cs.client.NewObject()
+	o.FromItem(i)
+	_, err := cs.client.Create(o)
+	return err
+}
+
+func (cs *inClusterStorage) Delete(name string) error {
+	return cs.client.Delete(name, v1.NewDeleteOptions(deleteGracePeriodSeconds))
+}
+
+func (cs *inClusterStorage) Update(i common.Item) error {
+	o, err := cs.client.Get(i.GetName())
 	if err != nil {
-		return common.Resource{}, err
+		return err
 	}
-	var res common.Resource
-	res, err = common.ItemToResource(i)
+	o.FromItem(i)
+	_, err = cs.client.Update(o)
+	return err
+}
+
+func (cs *inClusterStorage) Get(name string) (common.Item, error) {
+	o, err := cs.client.Get(name)
 	if err != nil {
-		return common.Resource{}, err
+		return nil, err
 	}
-	return res, nil
+	return o.ToItem(), nil
+
 }
 
-func (s *Storage) GetResources() ([]common.Resource, error) {
-	var resources []common.Resource
-	items, err := s.resources.List()
+func (cs *inClusterStorage) List() ([]common.Item, error) {
+	col, err := cs.client.List(v1.ListOptions{})
 	if err != nil {
-		return resources, err
+		return nil, err
 	}
-	for _, i := range items {
-		var res common.Resource
-		res, err = common.ItemToResource(i)
-		if err != nil {
-			return nil, err
-		}
-		resources = append(resources, res)
+	var items []common.Item
+	for _, i := range col.GetItems() {
+		items = append(items, i.ToItem())
 	}
-	sort.Stable(common.ResourceByUpdateTime(resources))
-	return resources, nil
-}
-
-func (s *Storage) AddConfig(conf common.ResourcesConfig) error {
-	return s.configs.Add(conf)
-}
-
-func (s *Storage) DeleteConfig(name string) error {
-	return s.configs.Delete(name)
-}
-
-func (s *Storage) UpdateConfig(conf common.ResourcesConfig) error {
-	return s.configs.Update(conf)
-}
-
-func (s *Storage) GetConfig(name string) (common.ResourcesConfig, error) {
-	i, err := s.configs.Get(name)
-	if err != nil {
-		return common.ResourcesConfig{}, err
-	}
-	var conf common.ResourcesConfig
-	conf, err = common.ItemToResourcesConfig(i)
-	if err != nil {
-		return common.ResourcesConfig{}, err
-	}
-	return conf, nil
-}
-
-func (s *Storage) GetConfigs() ([]common.ResourcesConfig, error) {
-	var configs []common.ResourcesConfig
-	items, err := s.configs.List()
-	if err != nil {
-		return configs, err
-	}
-	for _, i := range items {
-		var conf common.ResourcesConfig
-		conf, err = common.ItemToResourcesConfig(i)
-		if err != nil {
-			return nil, err
-		}
-		configs = append(configs, conf)
-	}
-	return configs, nil
+	return items, nil
 }

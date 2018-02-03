@@ -90,19 +90,19 @@ func createFakeBoskos(tc testConfig) (*ranch.Storage, *Client, []common.Resource
 }
 
 func (fb *fakeBoskos) Acquire(rtype, state, dest string) (*common.Resource, error) {
-	return fb.ranch.Acquire(rtype, state, dest, Owner)
+	return fb.ranch.Acquire(rtype, state, dest, owner)
 }
 
 func (fb *fakeBoskos) AcquireByState(state, dest string) ([]common.Resource, error) {
-	return fb.ranch.AcquireByState(state, dest, Owner)
+	return fb.ranch.AcquireByState(state, dest, owner)
 }
 
 func (fb *fakeBoskos) ReleaseOne(name, dest string) error {
-	return fb.ranch.Release(name, dest, Owner)
+	return fb.ranch.Release(name, dest, owner)
 }
 
 func (fb *fakeBoskos) UpdateOne(name, state string, userData common.UserData) error {
-	return fb.ranch.Update(name, Owner, state, userData)
+	return fb.ranch.Update(name, owner, state, userData)
 }
 
 func TestRecycleLeasedResources(t *testing.T) {
@@ -126,7 +126,7 @@ func TestRecycleLeasedResources(t *testing.T) {
 	res2, _ := rStorage.GetResource("type2_0")
 	res2.UserData.Set(LeasedResources, &[]string{"type1_0"})
 	rStorage.UpdateResource(res2)
-	m := NewMason(masonTypes, 1, mClient, time.Millisecond)
+	m := newMason(masonTypes, 1, mClient, time.Millisecond)
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.start(m.recycleAll)
@@ -162,7 +162,7 @@ func TestRecycleNoLeasedResources(t *testing.T) {
 	}
 
 	rStorage, mClient, configs := createFakeBoskos(tc)
-	m := NewMason(masonTypes, 1, mClient, time.Millisecond)
+	m := newMason(masonTypes, 1, mClient, time.Millisecond)
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.start(m.recycleAll)
@@ -198,20 +198,20 @@ func TestFulfillOne(t *testing.T) {
 	}
 
 	rStorage, mClient, configs := createFakeBoskos(tc)
-	m := NewMason(masonTypes, 1, mClient, time.Millisecond)
+	m := newMason(masonTypes, 1, mClient, time.Millisecond)
 	m.storage.SyncConfigs(configs)
 	res, _ := mClient.basic.Acquire("type2", common.Dirty, common.Cleaning)
 	conf, err := m.storage.GetConfig("type2")
 	if err != nil {
 		t.Error("failed to get config")
 	}
-	req := Requirement{
+	req := requirements{
 		resource:    *res,
 		needs:       conf.Needs,
 		fulfillment: common.TypeToResources{},
 	}
 	if err := m.fulfillOne(&req); err != nil {
-		t.Errorf("could not satisty requirement ")
+		t.Errorf("could not satisty requirements ")
 	}
 	if len(req.fulfillment) != 1 {
 		t.Errorf("there should be only one type")
@@ -253,7 +253,7 @@ func TestMason(t *testing.T) {
 		},
 	}
 	rStorage, mClient, configs := createFakeBoskos(tc)
-	m := NewMason(masonTypes, 5, mClient, time.Millisecond)
+	m := newMason(masonTypes, 5, mClient, time.Millisecond)
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()
@@ -309,7 +309,7 @@ func TestMasonStartStop(t *testing.T) {
 		},
 	}
 	_, mClient, configs := createFakeBoskos(tc)
-	m := NewMason(masonTypes, 5, mClient, time.Millisecond)
+	m := newMason(masonTypes, 5, mClient, time.Millisecond)
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()
@@ -431,7 +431,7 @@ func TestSyncConfig(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		s := NewStorage(storage.NewMemoryStorage())
+		s := newStorage(storage.NewMemoryStorage())
 		s.SyncConfigs(tc.newConfig)
 		configs, err := s.GetConfigs()
 		if err != nil {
@@ -520,7 +520,7 @@ func TestGetConfig(t *testing.T) {
 		},
 	}
 	for _, tc := range testcases {
-		s := NewStorage(storage.NewMemoryStorage())
+		s := newStorage(storage.NewMemoryStorage())
 		for _, config := range tc.configs {
 			s.AddConfig(config)
 		}

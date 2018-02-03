@@ -27,29 +27,34 @@ import (
 	"k8s.io/test-infra/boskos/storage"
 )
 
+// Storage stores configuration information
 type Storage struct {
-	configs     storage.Interface
+	configs     storage.PersistenceLayer
 	configsLock sync.RWMutex
 }
 
-func NewStorage(c storage.Interface) *Storage {
+func newStorage(c storage.PersistenceLayer) *Storage {
 	return &Storage{
 		configs: c,
 	}
 }
 
+// AddConfig adds a new config
 func (s *Storage) AddConfig(conf common.ResourcesConfig) error {
 	return s.configs.Add(conf)
 }
 
+// DeleteConfig deletes an existing config if it exists or fail otherwise
 func (s *Storage) DeleteConfig(name string) error {
 	return s.configs.Delete(name)
 }
 
+// UpdateConfig updates a given if it exists or fail otherwise
 func (s *Storage) UpdateConfig(conf common.ResourcesConfig) error {
 	return s.configs.Update(conf)
 }
 
+// GetConfig returns an existing if it exists errors out otherwise
 func (s *Storage) GetConfig(name string) (common.ResourcesConfig, error) {
 	i, err := s.configs.Get(name)
 	if err != nil {
@@ -63,6 +68,7 @@ func (s *Storage) GetConfig(name string) (common.ResourcesConfig, error) {
 	return conf, nil
 }
 
+// GetConfigs returns all configs
 func (s *Storage) GetConfigs() ([]common.ResourcesConfig, error) {
 	var configs []common.ResourcesConfig
 	items, err := s.configs.List()
@@ -80,6 +86,7 @@ func (s *Storage) GetConfigs() ([]common.ResourcesConfig, error) {
 	return configs, nil
 }
 
+// SyncConfigs syncs new configs
 func (s *Storage) SyncConfigs(newConfigs []common.ResourcesConfig) error {
 	s.configsLock.Lock()
 	defer s.configsLock.Unlock()

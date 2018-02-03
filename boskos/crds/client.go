@@ -66,8 +66,8 @@ type Collection interface {
 	GetItems() []Object
 }
 
-// CreateRESTConfig for cluster API server, pass empty config file for in-cluster
-func CreateRESTConfig(kubeconfig string, t Type) (config *rest.Config, types *runtime.Scheme, err error) {
+// createRESTConfig for cluster API server, pass empty config file for in-cluster
+func createRESTConfig(kubeconfig string, t Type) (config *rest.Config, types *runtime.Scheme, err error) {
 	if kubeconfig == "" {
 		config, err = rest.InClusterConfig()
 	} else {
@@ -100,8 +100,8 @@ func CreateRESTConfig(kubeconfig string, t Type) (config *rest.Config, types *ru
 	return
 }
 
-// RegisterResource sends a request to create CRDs and waits for them to initialize
-func RegisterResource(config *rest.Config, kind, plural string) error {
+// registerResource sends a request to create CRDs and waits for them to initialize
+func registerResource(config *rest.Config, kind, plural string) error {
 	c, err := apiextensionsclient.NewForConfig(config)
 	if err != nil {
 		return err
@@ -133,23 +133,23 @@ func NewClient(cl *rest.RESTClient, scheme *runtime.Scheme, namespace string, t 
 		codec: runtime.NewParameterCodec(scheme)}
 }
 
-// NewDummyClient creates a in memory client representation for testing, such that we do not need to use a kubernetes API Server.
-func NewDummyClient(t Type) *DummyClient {
-	c := &DummyClient{
+// newDummyClient creates a in memory client representation for testing, such that we do not need to use a kubernetes API Server.
+func newDummyClient(t Type) *dummyClient {
+	c := &dummyClient{
 		t:       t,
 		objects: make(map[string]Object),
 	}
 	return c
 }
 
-// NewClientFromFlags creates a CRD rest client from provided flags.
-func NewClientFromFlags(t Type) (*Client, error) {
-	config, scheme, err := CreateRESTConfig(*kubeConfig, t)
+// newClientFromFlags creates a CRD rest client from provided flags.
+func newClientFromFlags(t Type) (*Client, error) {
+	config, scheme, err := createRESTConfig(*kubeConfig, t)
 	if err != nil {
 		return nil, err
 	}
 
-	if err = RegisterResource(config, t.Kind, t.Plural); err != nil {
+	if err = registerResource(config, t.Kind, t.Plural); err != nil {
 		return nil, err
 	}
 	// creates the client
@@ -164,35 +164,46 @@ func NewClientFromFlags(t Type) (*Client, error) {
 
 // ClientInterface is used for testing.
 type ClientInterface interface {
+	// NewObject instantiates a new object of the type supported by the client
 	NewObject() Object
+	// NewCollection instantiates a new collection of the type supported by the client
 	NewCollection() Collection
+	// Create a new object
 	Create(obj Object) (Object, error)
+	// Update an existing object, fails if object does not exists
 	Update(obj Object) (Object, error)
+	// Delete an existing object, fails if objects does not exists
 	Delete(name string, options *v1.DeleteOptions) error
+	// Get an existing object
 	Get(name string) (Object, error)
+	// LIst existing objects
 	List(opts v1.ListOptions) (Collection, error)
 }
 
-// DummyClient is used for testing purposes
-type DummyClient struct {
+// dummyClient is used for testing purposes
+type dummyClient struct {
 	objects map[string]Object
 	t       Type
 }
 
-func (c *DummyClient) NewObject() Object {
+// NewObject implements ClientInterface
+func (c *dummyClient) NewObject() Object {
 	return c.t.Object.DeepCopyObject().(Object)
 }
 
-func (c *DummyClient) NewCollection() Collection {
+// NewCollection implements ClientInterface
+func (c *dummyClient) NewCollection() Collection {
 	return c.t.Collection.DeepCopyObject().(Collection)
 }
 
-func (c *DummyClient) Create(obj Object) (Object, error) {
+// Create implements ClientInterface
+func (c *dummyClient) Create(obj Object) (Object, error) {
 	c.objects[obj.GetName()] = obj
 	return obj, nil
 }
 
-func (c *DummyClient) Update(obj Object) (Object, error) {
+// Update implements ClientInterface
+func (c *dummyClient) Update(obj Object) (Object, error) {
 	_, ok := c.objects[obj.GetName()]
 	if !ok {
 		return nil, fmt.Errorf("cannot find object %s", obj.GetName())
@@ -201,7 +212,8 @@ func (c *DummyClient) Update(obj Object) (Object, error) {
 	return obj, nil
 }
 
-func (c *DummyClient) Delete(name string, options *v1.DeleteOptions) error {
+// Delete implements ClientInterface
+func (c *dummyClient) Delete(name string, options *v1.DeleteOptions) error {
 	_, ok := c.objects[name]
 	if ok {
 		delete(c.objects, name)
@@ -210,7 +222,8 @@ func (c *DummyClient) Delete(name string, options *v1.DeleteOptions) error {
 	return fmt.Errorf("%s does not exist", name)
 }
 
-func (c *DummyClient) Get(name string) (Object, error) {
+// Get implements ClientInterface
+func (c *dummyClient) Get(name string) (Object, error) {
 	obj, ok := c.objects[name]
 	if ok {
 		return obj, nil
@@ -218,7 +231,8 @@ func (c *DummyClient) Get(name string) (Object, error) {
 	return nil, fmt.Errorf("could not find %s", name)
 }
 
-func (c *DummyClient) List(opts v1.ListOptions) (Collection, error) {
+// List implements ClientInterface
+func (c *dummyClient) List(opts v1.ListOptions) (Collection, error) {
 	var items []Object
 	for _, i := range c.objects {
 		items = append(items, i)
@@ -228,6 +242,7 @@ func (c *DummyClient) List(opts v1.ListOptions) (Collection, error) {
 	return r, nil
 }
 
+// Client implements a true CRD rest client
 type Client struct {
 	cl     *rest.RESTClient
 	ns     string
@@ -236,14 +251,16 @@ type Client struct {
 	codec  runtime.ParameterCodec
 }
 
+// NewObject implements ClientInterface
 func (c *Client) NewObject() Object {
 	return c.t.Object.DeepCopyObject().(Object)
 }
 
+// NewCollection implements ClientInterface
 func (c *Client) NewCollection() Collection {
 	return c.t.Collection.DeepCopyObject().(Collection)
 }
-
+// Create implements ClientInterface
 func (c *Client) Create(obj Object) (Object, error) {
 	result := c.NewObject()
 	err := c.cl.Post().
@@ -255,7 +272,7 @@ func (c *Client) Create(obj Object) (Object, error) {
 		Into(result)
 	return result, err
 }
-
+// Update implements ClientInterface
 func (c *Client) Update(obj Object) (Object, error) {
 	result := c.NewObject()
 	err := c.cl.Put().
@@ -268,6 +285,7 @@ func (c *Client) Update(obj Object) (Object, error) {
 	return result, err
 }
 
+// Delete implements ClientInterface
 func (c *Client) Delete(name string, options *v1.DeleteOptions) error {
 	return c.cl.Delete().
 		Namespace(c.ns).
@@ -278,6 +296,7 @@ func (c *Client) Delete(name string, options *v1.DeleteOptions) error {
 		Error()
 }
 
+// Get implements ClientInterface
 func (c *Client) Get(name string) (Object, error) {
 	result := c.NewObject()
 	err := c.cl.Get().
@@ -289,6 +308,7 @@ func (c *Client) Get(name string) (Object, error) {
 	return result, err
 }
 
+// List implements ClientInterface
 func (c *Client) List(opts v1.ListOptions) (Collection, error) {
 	result := c.NewCollection()
 	err := c.cl.Get().

@@ -23,67 +23,80 @@ import (
 )
 
 const (
-	ResourcesConfigKind   = "ResourcesConfig"
-	ResourcesConfigPlural = "resourcesconfigs"
+	resourcesConfigKind   = "ResourcesConfig"
+	resourcesConfigPlural = "resourcesconfigs"
 )
 
 var (
-	ResourcesConfigType = Type{
-		Kind:       ResourcesConfigKind,
-		Plural:     ResourcesConfigPlural,
-		Object:     &ResourcesConfig{},
-		Collection: &ResourcesConfigList{},
+	resourcesConfigType = Type{
+		Kind:       resourcesConfigKind,
+		Plural:     resourcesConfigPlural,
+		Object:     &ResourcesConfigObject{},
+		Collection: &ResourcesConfigCollection{},
 	}
 )
 
-// ResourceConfig holds generalized configuration information about how the
-// resource needs to be created. Some Resource might not have a ResourceConfig (Example Project)
+// NewResourceConfigClient creates a CRD rest client for common.Resource
+func NewResourceConfigClient() (ClientInterface, error) {
+	return newClientFromFlags(resourcesConfigType)
+}
 
-type ResourcesConfig struct {
+// NewTestResourceConfigClient creates a fake CRD rest client for common.Resource
+func NewTestResourceConfigClient() ClientInterface {
+	return newDummyClient(resourcesConfigType)
+}
+
+// ResourcesConfigObject holds generalized configuration information about how the
+// resource needs to be created.
+// Some Resource might not have a ResourceConfig (Example Project)
+type ResourcesConfigObject struct {
 	v1.TypeMeta   `json:",inline"`
 	v1.ObjectMeta `json:"metadata,omitempty"`
 	Spec          ResourcesConfigSpec `json:"spec"`
 }
 
+// ResourcesConfigSpec holds config implementation specfic configuration as well as resource needs
 type ResourcesConfigSpec struct {
 	Config common.ConfigType    `json:"config"`
 	Needs  common.ResourceNeeds `json:"resourceneeds"`
 }
 
-type ResourcesConfigList struct {
-	v1.TypeMeta `json:",inline"`
-	v1.ListMeta `json:"metadata,omitempty"`
-	Items       []*ResourcesConfig `json:"items"`
+// ResourcesConfigCollection implement the Collections interface
+type ResourcesConfigCollection struct {
+	v1.TypeMeta                          `json:",inline"`
+	v1.ListMeta                          `json:"metadata,omitempty"`
+	Items       []*ResourcesConfigObject `json:"items"`
 }
 
-func (in *ResourcesConfig) GetName() string {
+// GetName implement the Object interface
+func (in *ResourcesConfigObject) GetName() string {
 	return in.Name
 }
 
-func (in *ResourcesConfig) DeepCopyInto(out *ResourcesConfig) {
+func (in *ResourcesConfigObject) deepCopyInto(out *ResourcesConfigObject) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
 	out.Spec = in.Spec
 }
 
-func (in *ResourcesConfig) DeepCopy() *ResourcesConfig {
+func (in *ResourcesConfigObject) deepCopy() *ResourcesConfigObject {
 	if in == nil {
 		return nil
 	}
-	out := new(ResourcesConfig)
-	in.DeepCopyInto(out)
+	out := new(ResourcesConfigObject)
+	in.deepCopyInto(out)
 	return out
 }
-
-func (in *ResourcesConfig) DeepCopyObject() runtime.Object {
-	if c := in.DeepCopy(); c != nil {
+// DeepCopyObject implement the runtime.Object interface
+func (in *ResourcesConfigObject) DeepCopyObject() runtime.Object {
+	if c := in.deepCopy(); c != nil {
 		return c
 	}
 	return nil
 }
 
-func (in *ResourcesConfig) ToConfig() common.ResourcesConfig {
+func (in *ResourcesConfigObject) toConfig() common.ResourcesConfig {
 	return common.ResourcesConfig{
 		Name:   in.Name,
 		Config: in.Spec.Config,
@@ -91,24 +104,27 @@ func (in *ResourcesConfig) ToConfig() common.ResourcesConfig {
 	}
 }
 
-func (in *ResourcesConfig) ToItem() common.Item {
-	return in.ToConfig()
+// ToItem implement the Object interface
+func (in *ResourcesConfigObject) ToItem() common.Item {
+	return in.toConfig()
 }
 
-func (in *ResourcesConfig) FromConfig(r common.ResourcesConfig) {
+func (in *ResourcesConfigObject) fromConfig(r common.ResourcesConfig) {
 	in.ObjectMeta.Name = r.Name
 	in.Spec.Config = r.Config
 	in.Spec.Needs = r.Needs
 }
 
-func (in *ResourcesConfig) FromItem(i common.Item) {
+// FromItem implement the Object interface
+func (in *ResourcesConfigObject) FromItem(i common.Item) {
 	c, err := common.ItemToResourcesConfig(i)
 	if err == nil {
-		in.FromConfig(c)
+		in.fromConfig(c)
 	}
 }
 
-func (in *ResourcesConfigList) GetItems() []Object {
+// GetItems implement the Collection interface
+func (in *ResourcesConfigCollection) GetItems() []Object {
 	var items []Object
 	for _, i := range in.Items {
 		items = append(items, i)
@@ -116,32 +132,34 @@ func (in *ResourcesConfigList) GetItems() []Object {
 	return items
 }
 
-func (in *ResourcesConfigList) SetItems(objects []Object) {
-	var items []*ResourcesConfig
+// SetItems implement the Collection interface
+func (in *ResourcesConfigCollection) SetItems(objects []Object) {
+	var items []*ResourcesConfigObject
 	for _, b := range objects {
-		items = append(items, b.(*ResourcesConfig))
+		items = append(items, b.(*ResourcesConfigObject))
 	}
 	in.Items = items
 }
 
-func (in *ResourcesConfigList) DeepCopyInto(out *ResourcesConfigList) {
+func (in *ResourcesConfigCollection) deepCopyInto(out *ResourcesConfigCollection) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	out.Items = in.Items
 }
 
-func (in *ResourcesConfigList) DeepCopy() *ResourcesConfigList {
+func (in *ResourcesConfigCollection) deepCopy() *ResourcesConfigCollection {
 	if in == nil {
 		return nil
 	}
-	out := new(ResourcesConfigList)
-	in.DeepCopyInto(out)
+	out := new(ResourcesConfigCollection)
+	in.deepCopyInto(out)
 	return out
 }
 
-func (in *ResourcesConfigList) DeepCopyObject() runtime.Object {
-	if c := in.DeepCopy(); c != nil {
+// DeepCopyObject implement the runtime.Object interface
+func (in *ResourcesConfigCollection) DeepCopyObject() runtime.Object {
+	if c := in.deepCopy(); c != nil {
 		return c
 	}
 	return nil

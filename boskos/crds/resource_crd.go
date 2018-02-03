@@ -26,45 +26,50 @@ import (
 )
 
 const (
-	ResourceKind   = "Resource"
-	ResourcePlural = "resources"
+	resourceKind   = "Resource"
+	resourcePlural = "resources"
 )
 
 var (
-	ResourceType = Type{
-		Kind:       ResourceKind,
-		Plural:     ResourcePlural,
-		Object:     &Resource{},
-		Collection: &ResourceList{},
+	resourceType = Type{
+		Kind:       resourceKind,
+		Plural:     resourcePlural,
+		Object:     &ResourceObject{},
+		Collection: &ResourceCollection{},
 	}
 )
 
-func NewResourceClient() (*Client, error) {
-	return NewClientFromFlags(ResourceType)
+// NewResourceClient creates a CRD rest client for common.Resource
+func NewResourceClient() (ClientInterface, error) {
+	return newClientFromFlags(resourceType)
 }
 
-// Resource holds the Resource Data. This is where the data is persisted.
-// The Resource will be generated from this
+// NewTestResourceClient creates a fake CRD rest client for common.Resource
+func NewTestResourceClient() ClientInterface {
+	return newDummyClient(resourceType)
+}
 
-type Resource struct {
+// ResourceObject represents common.ResourceObject. It implements the Object interface.
+type ResourceObject struct {
 	v1.TypeMeta   `json:",inline"`
 	v1.ObjectMeta `json:"metadata,omitempty"`
 	Spec          ResourceSpec   `json:"spec,omitempty"`
 	Status        ResourceStatus `json:"status,omitempty"`
 }
 
-type ResourceList struct {
-	v1.TypeMeta `json:",inline"`
-	v1.ListMeta `json:"metadata,omitempty"`
-	Items       []*Resource `json:"items"`
+// ResourceCollection is the Collection implementation
+type ResourceCollection struct {
+	v1.TypeMeta                   `json:",inline"`
+	v1.ListMeta                   `json:"metadata,omitempty"`
+	Items       []*ResourceObject `json:"items"`
 }
 
+// ResourceSpec holds information that are not likely to change
 type ResourceSpec struct {
 	Type string `json:"type"`
 }
 
-// ResourceStatus holds information about on leased resources as well as
-// information on how to use the new resource created.
+// ResourceStatus holds information that are likely to change
 type ResourceStatus struct {
 	State      string          `json:"state,omitempty"`
 	Owner      string          `json:"owner"`
@@ -72,11 +77,12 @@ type ResourceStatus struct {
 	UserData   common.UserData `json:"userdata,omitempty"`
 }
 
-func (in *Resource) GetName() string {
+// GetName returns a unique identifier for a given resource
+func (in *ResourceObject) GetName() string {
 	return in.Name
 }
 
-func (in *Resource) DeepCopyInto(out *Resource) {
+func (in *ResourceObject) deepCopyInto(out *ResourceObject) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
@@ -84,23 +90,24 @@ func (in *Resource) DeepCopyInto(out *Resource) {
 	out.Status = in.Status
 }
 
-func (in *Resource) DeepCopy() *Resource {
+func (in *ResourceObject) deepCopy() *ResourceObject {
 	if in == nil {
 		return nil
 	}
-	out := new(Resource)
-	in.DeepCopyInto(out)
+	out := new(ResourceObject)
+	in.deepCopyInto(out)
 	return out
 }
 
-func (in *Resource) DeepCopyObject() runtime.Object {
-	if c := in.DeepCopy(); c != nil {
+// DeepCopyObject implements runtime.Object interface
+func (in *ResourceObject) DeepCopyObject() runtime.Object {
+	if c := in.deepCopy(); c != nil {
 		return c
 	}
 	return nil
 }
 
-func (in *Resource) ToResource() common.Resource {
+func (in *ResourceObject) toResource() common.Resource {
 	return common.Resource{
 		Name:       in.Name,
 		Type:       in.Spec.Type,
@@ -111,11 +118,12 @@ func (in *Resource) ToResource() common.Resource {
 	}
 }
 
-func (in *Resource) ToItem() common.Item {
-	return in.ToResource()
+// ToItem implements Object interface
+func (in *ResourceObject) ToItem() common.Item {
+	return in.toResource()
 }
 
-func (in *Resource) FromResource(r common.Resource) {
+func (in *ResourceObject) fromResource(r common.Resource) {
 	in.Name = r.Name
 	in.Spec.Type = r.Type
 	in.Status.Owner = r.Owner
@@ -124,47 +132,50 @@ func (in *Resource) FromResource(r common.Resource) {
 	in.Status.UserData = r.UserData
 }
 
-func (in *Resource) FromItem(i common.Item) {
+// FromItem implements Object interface
+func (in *ResourceObject) FromItem(i common.Item) {
 	r, err := common.ItemToResource(i)
 	if err == nil {
-		in.FromResource(r)
+		in.fromResource(r)
 	}
 }
 
-func (in *ResourceList) GetItems() []Object {
+// GetItems implements Collection interface
+func (in *ResourceCollection) GetItems() []Object {
 	var items []Object
 	for _, i := range in.Items {
 		items = append(items, i)
 	}
 	return items
 }
-
-func (in *ResourceList) SetItems(objects []Object) {
-	var items []*Resource
+// SetItems implements Collection interface
+func (in *ResourceCollection) SetItems(objects []Object) {
+	var items []*ResourceObject
 	for _, b := range objects {
-		items = append(items, b.(*Resource))
+		items = append(items, b.(*ResourceObject))
 	}
 	in.Items = items
 }
 
-func (in *ResourceList) DeepCopyInto(out *ResourceList) {
+func (in *ResourceCollection) deepCopyInto(out *ResourceCollection) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	out.Items = in.Items
 }
 
-func (in *ResourceList) DeepCopy() *ResourceList {
+func (in *ResourceCollection) deepCopy() *ResourceCollection {
 	if in == nil {
 		return nil
 	}
-	out := new(ResourceList)
-	in.DeepCopyInto(out)
+	out := new(ResourceCollection)
+	in.deepCopyInto(out)
 	return out
 }
 
-func (in *ResourceList) DeepCopyObject() runtime.Object {
-	if c := in.DeepCopy(); c != nil {
+// DeepCopyObject implements Collection interface
+func (in *ResourceCollection) DeepCopyObject() runtime.Object {
+	if c := in.deepCopy(); c != nil {
 		return c
 	}
 	return nil

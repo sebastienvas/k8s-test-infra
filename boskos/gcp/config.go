@@ -43,12 +43,13 @@ var (
 )
 
 const (
+	// ResourceConfigType defines the GCP config type
 	ResourceConfigType = "GCPResourceConfig"
 	persistent         = "PERSISTENT"
 	oneToOneNAT        = "ONE_TO_ONE_NAT"
 )
 
-type GKEClusterConfig struct {
+type clusterConfig struct {
 	MachineType           string `json:"machinetype,omitempty"`
 	NumNodes              int64  `json:"numnodes,omitempty"`
 	Version               string `json:"version,omitempty"`
@@ -56,7 +57,7 @@ type GKEClusterConfig struct {
 	EnableKubernetesAlpha bool   `json:"enablekubernetesalpha"`
 }
 
-type GCEVMConfig struct {
+type virtualMachineConfig struct {
 	MachineType string   `json:"machinetype,omitempty"`
 	SourceImage string   `json:"sourceimage,omitempty"`
 	Zone        string   `json:"zone,ompitempty"`
@@ -64,28 +65,28 @@ type GCEVMConfig struct {
 	Scopes      []string `json:"scopes,omitempty"`
 }
 
-type ProjectConfig struct {
-	Type     string             `json:"type,omitempty"`
-	Clusters []GKEClusterConfig `json:"clusters,omitempty"`
-	Vms      []GCEVMConfig      `json:"vms,omitempty"`
+type projectConfig struct {
+	Type     string                 `json:"type,omitempty"`
+	Clusters []clusterConfig        `json:"clusters,omitempty"`
+	Vms      []virtualMachineConfig `json:"vms,omitempty"`
 }
 
-type ResourcesConfig struct {
-	ProjectConfigs []ProjectConfig `json:"projectconfigs,omitempty"`
+type resourcesConfig struct {
+	ProjectConfigs []projectConfig `json:"projectconfigs,omitempty"`
 }
 
-type InstanceInfo struct {
+type instanceInfo struct {
 	Name string `json:"name"`
 }
 
-type ProjectInfo struct {
+type projectInfo struct {
 	Name     string         `json:"name"`
-	Clusters []InstanceInfo `json:"clusters,omitempty"`
-	VMs      []InstanceInfo `json:"vms,omitempty"`
+	Clusters []instanceInfo `json:"clusters,omitempty"`
+	VMs      []instanceInfo `json:"vms,omitempty"`
 }
 
-type ResourceInfo struct {
-	ProjectsInfo []ProjectInfo `json:"projectsinfo,omitempty"`
+type resourceInfo struct {
+	ProjectsInfo []projectInfo `json:"projectsinfo,omitempty"`
 }
 
 type client struct {
@@ -93,8 +94,9 @@ type client struct {
 	gceService *compute.Service
 }
 
-func (rc *ResourcesConfig) Construct(res *common.Resource, types common.TypeToResources) (common.UserData, error) {
-	info := ResourceInfo{}
+// Construct implements Masonable interface
+func (rc *resourcesConfig) Construct(res *common.Resource, types common.TypeToResources) (common.UserData, error) {
+	info := resourceInfo{}
 	var err error
 
 	gcpClient, err := newClient()
@@ -121,9 +123,9 @@ func (rc *ResourcesConfig) Construct(res *common.Resource, types common.TypeToRe
 			logrus.WithError(err).Errorf("unable to create resources")
 			return nil, err
 		}
-		projectInfo := ProjectInfo{Name: project.Name}
+		projectInfo := projectInfo{Name: project.Name}
 		for _, cl := range pc.Clusters {
-			var clusterInfo *InstanceInfo
+			var clusterInfo *instanceInfo
 			clusterInfo, err = gcpClient.createCluster(project.Name, cl)
 			if err != nil {
 				logrus.WithError(err).Errorf("unable to create cluster on project %s", project.Name)
@@ -132,7 +134,7 @@ func (rc *ResourcesConfig) Construct(res *common.Resource, types common.TypeToRe
 			projectInfo.Clusters = append(projectInfo.Clusters, *clusterInfo)
 		}
 		for _, vm := range pc.Vms {
-			var vmInfo *InstanceInfo
+			var vmInfo *instanceInfo
 			vmInfo, err = gcpClient.createVM(project.Name, vm)
 			if err != nil {
 				logrus.WithError(err).Errorf("unable to create vm on project %s", project.Name)
@@ -150,29 +152,14 @@ func (rc *ResourcesConfig) Construct(res *common.Resource, types common.TypeToRe
 	return userData, nil
 }
 
-func (rc *ResourcesConfig) GetName() string {
-	return ResourceConfigType
-}
-
-func configConverter(in string) (*ResourcesConfig, error) {
-	var config ResourcesConfig
+// ConfigConverter implements mason.ConfigConverter
+func ConfigConverter(in string) (mason.Masonable, error) {
+	var config resourcesConfig
 	if err := yaml.Unmarshal([]byte(in), &config); err != nil {
 		logrus.WithError(err).Errorf("unable to parse %s", in)
 		return nil, err
 	}
 	return &config, nil
-}
-
-func ConfigConverter(in string) (mason.Masonable, error) {
-	return configConverter(in)
-}
-
-func (ri *ResourceInfo) ToString() (string, error) {
-	out, err := yaml.Marshal(ri)
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
 }
 
 func newClient() (*client, error) {
@@ -225,7 +212,7 @@ func generateName(prefix string) string {
 	return fmt.Sprintf("%s-%s", prefix, time.Now().Format("0102150405"))
 }
 
-func (cc *client) createCluster(project string, config GKEClusterConfig) (*InstanceInfo, error) {
+func (cc *client) createCluster(project string, config clusterConfig) (*instanceInfo, error) {
 	var version string
 	name := generateName("gke")
 	serverConfig, err := cc.gkeService.Projects.Zones.GetServerconfig(project, config.Zone).Do()
@@ -257,10 +244,10 @@ func (cc *client) createCluster(project string, config GKEClusterConfig) (*Insta
 		return nil, err
 	}
 	logrus.Infof("Instance %s created via operation %s", clusterRequest.Cluster.Name, op.Name)
-	return &InstanceInfo{Name: name}, nil
+	return &instanceInfo{Name: name}, nil
 }
 
-func newComputeInstance(config GCEVMConfig, project, name string) *compute.Instance {
+func newComputeInstance(config virtualMachineConfig, project, name string) *compute.Instance {
 	// Inconsistency between compute and container APIs
 	machineType := fmt.Sprintf("projects/%s/zones/%s/machineTypes/%s", project, config.Zone, config.MachineType)
 	zone := fmt.Sprintf("projects/%s/zones/%s", project, config.Zone)
@@ -303,7 +290,7 @@ func newComputeInstance(config GCEVMConfig, project, name string) *compute.Insta
 	return instance
 }
 
-func (cc *client) createVM(project string, config GCEVMConfig) (*InstanceInfo, error) {
+func (cc *client) createVM(project string, config virtualMachineConfig) (*instanceInfo, error) {
 	name := generateName("gce")
 	instance := newComputeInstance(config, project, name)
 	call := cc.gceService.Instances.Insert(project, config.Zone, instance)
@@ -312,5 +299,5 @@ func (cc *client) createVM(project string, config GCEVMConfig) (*InstanceInfo, e
 		return nil, err
 	}
 	logrus.Infof("Instance %s created via operation %s", instance.Name, op.Name)
-	return &InstanceInfo{Name: name}, nil
+	return &instanceInfo{Name: name}, nil
 }
