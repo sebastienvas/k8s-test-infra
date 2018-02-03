@@ -257,7 +257,7 @@ func TestMason(t *testing.T) {
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()
-	<-time.After(4 * time.Second)
+	<-time.After(5 * time.Second)
 	resources, _ := rStorage.GetResources()
 	for _, r := range resources {
 		switch r.Type {
