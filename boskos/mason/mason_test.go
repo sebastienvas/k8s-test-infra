@@ -28,6 +28,7 @@ import (
 	"k8s.io/test-infra/boskos/ranch"
 	"k8s.io/test-infra/boskos/storage"
 	"context"
+	"sync"
 )
 
 const (
@@ -337,11 +338,16 @@ func TestMasonStartStop(t *testing.T) {
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()
 	var done bool
+	var lock sync.RWMutex
 	go func() {
 		m.Stop()
+		lock.Lock()
+		defer lock.Unlock()
 		done = true
 	}()
 	<-time.After(1 *time.Second)
+	lock.Lock()
+	defer lock.Unlock()
 	if ! done {
 		t.Errorf("unable to stop mason")
 	}
