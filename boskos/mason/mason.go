@@ -17,6 +17,7 @@ limitations under the License.
 package mason
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"gopkg.in/yaml.v2"
@@ -70,9 +71,8 @@ type Mason struct {
 	typesToClean                []string
 	sleepTime                   time.Duration
 	wg                          sync.WaitGroup
-	quit                        chan bool
 	configConverters            map[string]ConfigConverter
-	shutdown                    bool
+	cancel                      context.CancelFunc
 }
 
 // requirements for a given resource
@@ -174,7 +174,6 @@ func newMason(rtypes []string, channelSize int, client boskosClient, sleepTime t
 		typesToClean:     rtypes,
 		sleepTime:        sleepTime,
 		configConverters: map[string]ConfigConverter{},
-		quit:             make(chan bool),
 	}
 }
 
@@ -196,22 +195,25 @@ func (m *Mason) convertConfig(configEntry *common.ResourcesConfig) (Masonable, e
 	return fn(configEntry.Config.Content)
 }
 
-func (m *Mason) cleanAll() {
+func (m *Mason) cleanAll(ctx context.Context) {
 	defer func() {
-		close(m.cleaned)
 		logrus.Info("Exiting cleanAll Thread")
 		m.wg.Done()
 	}()
-	for req := range m.fulfilled {
-		if err := m.cleanOne(&req.resource, req.fulfillment); err != nil {
-			err = m.client.ReleaseOne(req.resource.Name, common.Dirty)
-			if err != nil {
-				logrus.WithError(err).Errorf("Unable to release resource %s", req.resource.Name)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case req := <-m.fulfilled:
+			if err := m.cleanOne(&req.resource, req.fulfillment); err != nil {
+				err = m.client.ReleaseOne(req.resource.Name, common.Dirty)
+				if err != nil {
+					logrus.WithError(err).Errorf("Unable to release resource %s", req.resource.Name)
+				}
+			} else {
+				m.cleaned <- req
 			}
-		} else {
-			m.cleaned <- req
 		}
-		time.Sleep(m.sleepTime)
 	}
 }
 
@@ -239,17 +241,22 @@ func (m *Mason) cleanOne(res *common.Resource, leasedResources common.TypeToReso
 	return nil
 }
 
-func (m *Mason) freeAll() {
+func (m *Mason) freeAll(ctx context.Context) {
 	defer func() {
 		logrus.Info("Exiting freeAll Thread")
 		m.wg.Done()
 	}()
-	for req := range m.cleaned {
-		if err := m.freeOne(&req.resource); err != nil {
-			m.cleaned <- req
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case req := <-m.cleaned:
+			if err := m.freeOne(&req.resource); err != nil {
+				m.cleaned <- req
+			}
 		}
-		time.Sleep(m.sleepTime)
 	}
+
 }
 
 func (m *Mason) freeOne(res *common.Resource) error {
@@ -283,15 +290,14 @@ func (m *Mason) freeOne(res *common.Resource) error {
 	return nil
 }
 
-func (m *Mason) recycleAll() {
+func (m *Mason) recycleAll(ctx context.Context) {
 	defer func() {
-		close(m.pending)
 		logrus.Info("Exiting recycleAll Thread")
 		m.wg.Done()
 	}()
 	for {
 		select {
-		case <-m.quit:
+		case <-ctx.Done():
 			return
 		case <-time.After(m.sleepTime):
 			for _, r := range m.typesToClean {
@@ -341,30 +347,33 @@ func (m *Mason) recycleOne(res *common.Resource) (*requirements, error) {
 	}, nil
 }
 
-func (m *Mason) fulfillAll() {
+func (m *Mason) fulfillAll(ctx context.Context) {
 	defer func() {
-		close(m.fulfilled)
 		logrus.Info("Exiting fulfillAll Thread")
 		m.wg.Done()
 	}()
-	for req := range m.pending {
-		if err := m.fulfillOne(&req); err != nil {
-			for _, resources := range req.fulfillment {
-				for _, res := range resources {
-					if err := m.client.ReleaseOne(res.Name, common.Free); err != nil {
-						logrus.WithError(err).Errorf("failed to release resource %s", res.Name)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case req := <-m.pending:
+			if err := m.fulfillOne(ctx, &req); err != nil {
+				for _, resources := range req.fulfillment {
+					for _, res := range resources {
+						if err := m.client.ReleaseOne(res.Name, common.Free); err != nil {
+							logrus.WithError(err).Errorf("failed to release resource %s", res.Name)
+						}
+						logrus.Infof("Released resource %s", res.Name)
 					}
-					logrus.Infof("Released resource %s", res.Name)
 				}
+			} else {
+				m.fulfilled <- req
 			}
-		} else {
-			m.fulfilled <- req
 		}
-		time.Sleep(m.sleepTime)
 	}
 }
 
-func (m *Mason) fulfillOne(req *requirements) error {
+func (m *Mason) fulfillOne(ctx context.Context, req *requirements) error {
 	// Making a copy
 	needs := common.ResourceNeeds{}
 	for k, v := range req.needs {
@@ -372,16 +381,17 @@ func (m *Mason) fulfillOne(req *requirements) error {
 	}
 	for rType := range needs {
 		for needs[rType] > 0 {
-			if m.shutdown {
-				return fmt.Errorf("shutting down")
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(m.sleepTime):
+				if res, err := m.client.Acquire(rType, common.Free, common.Leased); err != nil {
+					logrus.WithError(err).Debug("boskos acquire failed!")
+				} else {
+					req.fulfillment[rType] = append(req.fulfillment[rType], res)
+					needs[rType]--
+				}
 			}
-			if res, err := m.client.Acquire(rType, common.Free, common.Leased); err != nil {
-				logrus.WithError(err).Debug("boskos acquire failed!")
-			} else {
-				req.fulfillment[rType] = append(req.fulfillment[rType], res)
-				needs[rType]--
-			}
-			time.Sleep(m.sleepTime)
 		}
 	}
 	if req.isFulFilled() {
@@ -416,25 +426,31 @@ func (m *Mason) UpdateConfigs(storagePath string) error {
 	return m.storage.SyncConfigs(configs)
 }
 
-func (m *Mason) start(fn func()) {
-	go fn()
+func (m *Mason) start(ctx context.Context, fn func(context.Context)) {
+	go func() {
+		fn(ctx)
+	}()
 	m.wg.Add(1)
 }
 
 // Start Mason
 func (m *Mason) Start() {
-	m.start(m.freeAll)
-	m.start(m.fulfillAll)
-	m.start(m.cleanAll)
-	m.start(m.recycleAll)
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
+	m.start(ctx, m.recycleAll)
+	m.start(ctx, m.fulfillAll)
+	m.start(ctx, m.cleanAll)
+	m.start(ctx, m.freeAll)
 	logrus.Info("Mason started")
 }
 
 // Stop Mason
 func (m *Mason) Stop() {
 	logrus.Info("Stopping Mason")
-	m.shutdown = true
-	m.quit <- true
+	m.cancel()
 	m.wg.Wait()
+	close(m.pending)
+	close(m.cleaned)
+	close(m.fulfilled)
 	logrus.Info("Mason stopped")
 }

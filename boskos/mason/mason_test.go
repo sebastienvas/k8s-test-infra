@@ -27,6 +27,7 @@ import (
 	"k8s.io/test-infra/boskos/common"
 	"k8s.io/test-infra/boskos/ranch"
 	"k8s.io/test-infra/boskos/storage"
+	"context"
 )
 
 const (
@@ -129,7 +130,9 @@ func TestRecycleLeasedResources(t *testing.T) {
 	m := newMason(masonTypes, 1, mClient.basic, time.Millisecond)
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
-	m.start(m.recycleAll)
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
+	m.start(ctx, m.recycleAll)
 	select {
 	case <-m.pending:
 		break
@@ -165,7 +168,9 @@ func TestRecycleNoLeasedResources(t *testing.T) {
 	m := newMason(masonTypes, 1, mClient.basic, time.Millisecond)
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
-	m.start(m.recycleAll)
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
+	m.start(ctx, m.recycleAll)
 	select {
 	case <-m.pending:
 		break
@@ -210,7 +215,7 @@ func TestFulfillOne(t *testing.T) {
 		needs:       conf.Needs,
 		fulfillment: common.TypeToResources{},
 	}
-	if err := m.fulfillOne(&req); err != nil {
+	if err := m.fulfillOne(context.Background(), &req); err != nil {
 		t.Errorf("could not satisty requirements ")
 	}
 	if len(req.fulfillment) != 1 {
@@ -257,7 +262,7 @@ func TestMason(t *testing.T) {
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()
-	<-time.After(5 * time.Second)
+	<-time.After(time.Second)
 	resources, _ := rStorage.GetResources()
 	for _, r := range resources {
 		switch r.Type {
@@ -284,10 +289,10 @@ func TestMason(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		res, err := mClient.Acquire("type2", common.Free, "Used")
-		leasedResources := leasedResourceFromRes(*res)
 		if err != nil {
 			t.Errorf("Count %d: There should be free resources", i)
 		}
+		leasedResources := leasedResourceFromRes(*res)
 		if len(leasedResources) != 1 {
 			t.Error("there should be 1 resource of type1")
 		}
@@ -331,7 +336,15 @@ func TestMasonStartStop(t *testing.T) {
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()
-	m.Stop()
+	var done bool
+	go func() {
+		m.Stop()
+		done = true
+	}()
+	<-time.After(1 *time.Second)
+	if ! done {
+		t.Errorf("unable to stop mason")
+	}
 }
 
 func TestConfig(t *testing.T) {
