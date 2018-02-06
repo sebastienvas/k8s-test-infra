@@ -125,7 +125,7 @@ On a successful request, `/metric` will return HTTP 200 and a JSON object contai
 ```
 
 ## Config update:
-1. Edit resources.json, and send a PR.
+1. Edit config.yaml, and send a PR.
 
 1. After PR is LG'd, make sure your branch is synced up with master.
 
@@ -150,7 +150,7 @@ For the boskos server that handles k8s e2e jobs, the status is available from th
 
 
 ## Local test:
-1. Start boskos with a fake resources.json, with `go run boskos.go -config=/path/to/resources.json`
+1. Start boskos with a fake config.yaml, with `go run boskos.go -config=/path/to/config.yaml`
 
 1. Sent some local requests to boskos:
 ```
