@@ -34,3 +34,7 @@ required = [
 [[constraint]]
   name = "cloud.google.com/go"
   version = "0.17.0"
+
+[[constraint]]
+  name = "github.com/peterbourgon/diskv"
+  version = "2.0"
