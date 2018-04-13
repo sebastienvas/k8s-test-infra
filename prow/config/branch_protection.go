@@ -43,3 +43,8 @@ type Branch struct {
 	Contexts []string `json:"require-contexts,omitempty"`
 	Pushers  []string `json:"allow-push,omitempty"`
 }
+
+func (c *Config) GetBranchProtection(org, repo, branch string) (*Branch, error) {
+	// Place holder. Implemented in #7680
+	return nil, nil
+}

@@ -101,6 +101,8 @@ type Presubmit struct {
 	Spec *v1.PodSpec `json:"spec,omitempty"`
 	// Run these jobs after successfully running this one.
 	RunAfterSuccess []Presubmit `json:"run_after_success"`
+	// Defines if a test is a required check as defined in the Github Branch protection.
+	Optional bool `json:"optional,omitempty"`
 
 	Brancher
 
@@ -205,6 +207,13 @@ func (ps Presubmit) RunsAgainstChanges(changes []string) bool {
 
 func (ps Presubmit) TriggerMatches(body string) bool {
 	return ps.re.MatchString(body)
+}
+
+func (ps Presubmit) Required() bool {
+	if ps.Optional || ps.SkipReport {
+		return false
+	}
+	return true
 }
 
 type ChangedFilesProvider func() ([]string, error)
