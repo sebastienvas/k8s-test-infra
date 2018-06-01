@@ -275,7 +275,7 @@ func TestMason(t *testing.T) {
 		},
 	}
 	rStorage, mClient, configs := createFakeBoskos(tc)
-	m := NewMason(5, 5, mClient.basic, 50*time.Millisecond)
+	m := NewMason(1, 5, mClient.basic, 50*time.Millisecond)
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()
@@ -353,7 +353,7 @@ func TestMasonStartStop(t *testing.T) {
 		},
 	}
 	_, mClient, configs := createFakeBoskos(tc)
-	m := NewMason(5, 5, mClient.basic, 50*time.Millisecond)
+	m := NewMason(1, 5, mClient.basic, 50*time.Millisecond)
 	m.storage.SyncConfigs(configs)
 	m.RegisterConfigConverter(fakeConfigType, fakeConfigConverter)
 	m.Start()

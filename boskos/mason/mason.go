@@ -171,7 +171,7 @@ func NewMason(channelSize, cleanerCount int, client boskosClient, sleepTime time
 		storage:          *newStorage(storage.NewMemoryStorage()),
 		pending:          make(chan requirements, channelSize),
 		cleaned:          make(chan requirements, channelSize),
-		fulfilled:        make(chan requirements, channelSize),
+		fulfilled:        make(chan requirements, cleanerCount),
 		sleepTime:        sleepTime,
 		configConverters: map[string]ConfigConverter{},
 	}
