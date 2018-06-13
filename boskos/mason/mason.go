@@ -24,9 +24,8 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/yaml.v2"
+	"github.com/ghodss/yaml"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/sirupsen/logrus"
 	"k8s.io/test-infra/boskos/common"
 	"k8s.io/test-infra/boskos/storage"
@@ -35,6 +34,8 @@ import (
 const (
 	// LeasedResources is a common.UserData entry
 	LeasedResources = "leasedResources"
+	// Number of queued serialized client operation before starting to block
+	maxClientOps = 50
 )
 
 // Masonable should be implemented by all configurations
@@ -55,9 +56,36 @@ type boskosClient interface {
 	ReleaseAll(dest string) error
 }
 
+// Used to serialize client operations and reducing blocking operation on goroutines
+type clientOps struct {
+	queue  chan func()
+	client boskosClient
+}
+
+func (c *clientOps) releaseOne(name, dest string) {
+	c.queue <- func() {
+		if err := c.client.ReleaseOne(name, dest); err != nil {
+			logrus.WithError(err).Errorf("failed to release %s to state %s", name, dest)
+		}
+	}
+}
+
+func (c *clientOps) updateOne(name, state string, userData common.UserData) {
+	c.queue <- func() {
+		if err := c.client.UpdateOne(name, state, userData); err != nil {
+			logrus.WithError(err).Errorf("failed to update release %s to state %s", name, state)
+		}
+	}
+}
+
+func (c *clientOps) add(fn func()) {
+	c.queue <- fn
+}
+
 // Mason uses config to convert dirty resources to usable one
 type Mason struct {
 	client                      boskosClient
+	serializedClientOps         clientOps
 	cleanerCount                int
 	storage                     Storage
 	pending, fulfilled, cleaned chan requirements
@@ -166,7 +194,11 @@ func ValidateConfig(configs []common.ResourcesConfig, resources []common.Resourc
 // Out: A Pointer to a Mason Object
 func NewMason(cleanerCount int, client boskosClient, sleepTime time.Duration) *Mason {
 	return &Mason{
-		client:           client,
+		client: client,
+		serializedClientOps: clientOps{
+			client: client,
+			queue:  make(chan func(), maxClientOps),
+		},
 		cleanerCount:     cleanerCount,
 		storage:          *newStorage(storage.NewMemoryStorage()),
 		pending:          make(chan requirements),
@@ -175,6 +207,15 @@ func NewMason(cleanerCount int, client boskosClient, sleepTime time.Duration) *M
 		sleepTime:        sleepTime,
 		configConverters: map[string]ConfigConverter{},
 	}
+}
+
+func checkUserData(res common.Resource) (common.LeasedResources, error) {
+	var leasedResources common.LeasedResources
+	if err := res.UserData.Extract(LeasedResources, &leasedResources); err != nil {
+		logrus.WithError(err).Errorf("failed to extract %s", LeasedResources)
+		return nil, err
+	}
+	return leasedResources, nil
 }
 
 // RegisterConfigConverter is used to register a new Masonable interface
@@ -211,9 +252,7 @@ func (m *Mason) garbageCollect(req requirements) {
 	}
 
 	for _, name := range names {
-		if err := m.client.ReleaseOne(name, common.Dirty); err != nil {
-			logrus.WithError(err).Errorf("Unable to release leased resource %s", name)
-		}
+		m.serializedClientOps.releaseOne(name, common.Dirty)
 	}
 
 }
@@ -254,15 +293,9 @@ func (m *Mason) cleanOne(ctx context.Context, res *common.Resource, leasedResour
 		logrus.WithError(err).Errorf("failed to construct resource %s", res.Name)
 		return err
 	}
-	if err := m.client.UpdateOne(res.Name, res.State, userData); err != nil {
-		logrus.WithError(err).Error("unable to update user data")
-		return err
-	}
-	if res.UserData == nil {
-		res.UserData = userData
-	} else {
-		res.UserData.Update(userData)
-	}
+	res.UserData.Update(userData)
+
+	m.serializedClientOps.updateOne(res.Name, res.State, userData)
 	logrus.Infof("Resource %s is cleaned", res.Name)
 	return nil
 }
@@ -277,7 +310,7 @@ func (m *Mason) freeAll(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case req := <-m.cleaned:
-			if err := m.freeOne(&req.resource); err != nil {
+			if err := m.freeOne(req); err != nil {
 				logrus.WithError(err).Errorf("failed to free up resource %s", req.resource.Name)
 				m.garbageCollect(req)
 			}
@@ -285,34 +318,29 @@ func (m *Mason) freeAll(ctx context.Context) {
 	}
 }
 
-func (m *Mason) freeOne(res *common.Resource) error {
-	// Finally return the resource as free
-	if err := m.client.ReleaseOne(res.Name, common.Free); err != nil {
-		logrus.WithError(err).Errorf("failed to release resource %s", res.Name)
+func (m *Mason) freeOne(req requirements) error {
+	res := req.resource
+	leasedResources, err := checkUserData(res)
+	if err != nil {
 		return err
 	}
-	var leasedResources common.LeasedResources
-	if res.UserData == nil {
-		err := fmt.Errorf("UserData is empty")
-		logrus.WithError(err).Errorf("failed to extract %s", LeasedResources)
-		return err
-	}
-	if err := res.UserData.Extract(LeasedResources, &leasedResources); err != nil {
-		logrus.WithError(err).Errorf("failed to extract %s", LeasedResources)
-		return err
-	}
-	// And release leased resources as res.Name state
-	var allErrors error
-	for _, name := range leasedResources {
-		if err := m.client.ReleaseOne(name, res.Name); err != nil {
-			logrus.WithError(err).Errorf("unable to release %s to state %s", name, res.Name)
-			allErrors = multierror.Append(allErrors, err)
+	// TODO: Implement a ReleaseMultiple in a transaction to prevent orphans
+	m.serializedClientOps.add(func() {
+		defer m.garbageCollect(req)
+		// Releasing main resource first to limit number of orphans.
+		if err := m.client.ReleaseOne(req.resource.Name, common.Free); err != nil {
+			logrus.WithError(err).Errorf("failed to release resource %s", req.resource.Name)
+			return
 		}
-	}
-	if allErrors != nil {
-		return allErrors
-	}
-	logrus.Infof("Resource %s has been freed", res.Name)
+		// And release leased resources as res.Name state
+		for _, name := range leasedResources {
+			if err := m.client.ReleaseOne(name, res.Name); err != nil {
+				logrus.WithError(err).Errorf("unable to release %s to state %s", name, res.Name)
+				return
+			}
+		}
+		logrus.Infof("Resource %s has been freed", res.Name)
+	})
 	return nil
 }
 
@@ -321,11 +349,12 @@ func (m *Mason) recycleAll(ctx context.Context) {
 		logrus.Info("Exiting recycleAll Thread")
 		m.wg.Done()
 	}()
+	tick := time.NewTicker(m.sleepTime).C
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(m.sleepTime):
+		case <-tick:
 			configs, err := m.storage.GetConfigs()
 			if err != nil {
 				logrus.WithError(err).Error("unable to get configuration")
@@ -341,9 +370,7 @@ func (m *Mason) recycleAll(ctx context.Context) {
 				} else {
 					if req, err := m.recycleOne(res); err != nil {
 						logrus.WithError(err).Errorf("unable to recycle resource %s", res.Name)
-						if err := m.client.ReleaseOne(res.Name, common.Dirty); err != nil {
-							logrus.WithError(err).Errorf("Unable to release resources %s", res.Name)
-						}
+						m.serializedClientOps.releaseOne(res.Name, common.Dirty)
 					} else {
 						m.pending <- *req
 					}
@@ -360,12 +387,7 @@ func (m *Mason) recycleOne(res *common.Resource) (*requirements, error) {
 		logrus.WithError(err).Errorf("could not get config for resource type %s", res.Type)
 		return nil, err
 	}
-	var leasedResources common.LeasedResources
-	if err := res.UserData.Extract(LeasedResources, &leasedResources); err != nil {
-		if _, ok := err.(*common.UserDataNotFound); !ok {
-			logrus.WithError(err).Errorf("cannot parse %s from User Data", LeasedResources)
-		}
-	}
+	leasedResources, _ := checkUserData(*res)
 	if leasedResources != nil {
 		resources, err := m.client.AcquireByState(res.Name, common.Leased, leasedResources)
 		if err != nil {
@@ -373,15 +395,11 @@ func (m *Mason) recycleOne(res *common.Resource) (*requirements, error) {
 		}
 
 		for _, r := range resources {
-			if err := m.client.ReleaseOne(r.Name, common.Dirty); err != nil {
-				logrus.WithError(err).Warningf("could not release resource %s", r.Name)
-			}
+			m.serializedClientOps.releaseOne(r.Name, common.Dirty)
 		}
 		// Deleting Leased Resources
-		delete(res.UserData, LeasedResources)
-		if err := m.client.UpdateOne(res.Name, res.State, common.UserData{LeasedResources: ""}); err != nil {
-			logrus.WithError(err).Errorf("could not update resource %s with freed leased resources", res.Name)
-		}
+		res.UserData.Delete(LeasedResources)
+		m.serializedClientOps.updateOne(res.Name, res.State, common.UserDataFromMap(map[string]string{LeasedResources: ""}))
 	}
 
 	return &requirements{
@@ -393,17 +411,18 @@ func (m *Mason) recycleOne(res *common.Resource) (*requirements, error) {
 
 func (m *Mason) syncAll(ctx context.Context) {
 	defer func() {
-		logrus.Info("Exiting UpdateAll Thread")
+		logrus.Info("Exiting syncAll Thread")
 		m.wg.Done()
 	}()
+	tick := time.NewTicker(m.sleepTime).C
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(m.sleepTime):
-			if err := m.client.SyncAll(); err != nil {
-				logrus.WithError(err).Errorf("failed to sync resources")
-			}
+		case fn := <-m.serializedClientOps.queue:
+			fn()
+		case <-tick:
+			m.client.SyncAll()
 		}
 	}
 }
@@ -436,6 +455,7 @@ func (m *Mason) fulfillAll(ctx context.Context) {
 
 func (m *Mason) fulfillOne(ctx context.Context, req *requirements) error {
 	// Making a copy
+	tick := time.NewTicker(m.sleepTime).C
 	needs := common.ResourceNeeds{}
 	for k, v := range req.needs {
 		needs[k] = v
@@ -445,7 +465,7 @@ func (m *Mason) fulfillOne(ctx context.Context, req *requirements) error {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(m.sleepTime):
+			case <-tick:
 				// In case we are waiting for a very long time,
 				// we need to make sure that existing resources are being updated
 				// TODO: handle update failures to update fullfillment.
@@ -471,15 +491,8 @@ func (m *Mason) fulfillOne(ctx context.Context, req *requirements) error {
 			logrus.WithError(err).Errorf("failed to add %s user data", LeasedResources)
 			return err
 		}
-		if err := m.client.UpdateOne(req.resource.Name, req.resource.State, userData); err != nil {
-			logrus.WithError(err).Errorf("Unable to update resource %s", req.resource.Name)
-			return err
-		}
-		if req.resource.UserData == nil {
-			req.resource.UserData = userData
-		} else {
-			req.resource.UserData.Update(userData)
-		}
+		req.resource.UserData.Update(userData)
+		m.serializedClientOps.updateOne(req.resource.Name, req.resource.State, userData)
 		logrus.Infof("requirements for release %s is fulfilled", req.resource.Name)
 		return nil
 	}
@@ -493,9 +506,7 @@ func (m *Mason) updateResources(req *requirements) {
 		resources = append(resources, leasedResources...)
 	}
 	for _, r := range resources {
-		if err := m.client.UpdateOne(r.Name, r.State, nil); err != nil {
-			logrus.WithError(err).Warningf("failed to update resource %s", r.Name)
-		}
+		m.serializedClientOps.updateOne(r.Name, r.State, common.UserData{})
 	}
 }
 
@@ -542,6 +553,7 @@ func (m *Mason) Stop() {
 	close(m.pending)
 	close(m.cleaned)
 	close(m.fulfilled)
+	close(m.serializedClientOps.queue)
 	m.client.ReleaseAll(common.Dirty)
 	logrus.Info("Mason stopped")
 }
