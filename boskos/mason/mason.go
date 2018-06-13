@@ -36,6 +36,8 @@ const (
 	LeasedResources = "leasedResources"
 	// Number of queued serialized client operation before starting to block
 	maxClientOps = 50
+	// Period between syncing all resources, this should be smaller than the reaper timeout
+	boskosSyncPeriod = 10 * time.Minute
 )
 
 // Masonable should be implemented by all configurations
@@ -84,15 +86,15 @@ func (c *clientOps) add(fn func()) {
 
 // Mason uses config to convert dirty resources to usable one
 type Mason struct {
-	client                      boskosClient
-	serializedClientOps         clientOps
-	cleanerCount                int
-	storage                     Storage
-	pending, fulfilled, cleaned chan requirements
-	sleepTime                   time.Duration
-	wg                          sync.WaitGroup
-	configConverters            map[string]ConfigConverter
-	cancel                      context.CancelFunc
+	client                             boskosClient
+	serializedClientOps                clientOps
+	cleanerCount                       int
+	storage                            Storage
+	pending, fulfilled, cleaned        chan requirements
+	boskosWaitPeriod, boskosSyncPeriod time.Duration
+	wg                                 sync.WaitGroup
+	configConverters                   map[string]ConfigConverter
+	cancel                             context.CancelFunc
 }
 
 // requirements for a given resource
@@ -190,9 +192,9 @@ func ValidateConfig(configs []common.ResourcesConfig, resources []common.Resourc
 //     channelSize  - Size for all the channel
 //     cleanerCount - Number of cleaning threads
 //     client       - boskos client
-//     sleepTime    - time to wait before a retry
+//     boskosWaitPeriod    - time to wait before a retry
 // Out: A Pointer to a Mason Object
-func NewMason(cleanerCount int, client boskosClient, sleepTime time.Duration) *Mason {
+func NewMason(cleanerCount int, client boskosClient, boskosWaitPeriod time.Duration) *Mason {
 	return &Mason{
 		client: client,
 		serializedClientOps: clientOps{
@@ -204,7 +206,8 @@ func NewMason(cleanerCount int, client boskosClient, sleepTime time.Duration) *M
 		pending:          make(chan requirements),
 		cleaned:          make(chan requirements, cleanerCount),
 		fulfilled:        make(chan requirements, cleanerCount),
-		sleepTime:        sleepTime,
+		boskosWaitPeriod: boskosWaitPeriod,
+		boskosSyncPeriod: boskosSyncPeriod,
 		configConverters: map[string]ConfigConverter{},
 	}
 }
@@ -326,16 +329,17 @@ func (m *Mason) freeOne(req requirements) error {
 	}
 	// TODO: Implement a ReleaseMultiple in a transaction to prevent orphans
 	m.serializedClientOps.add(func() {
-		defer m.garbageCollect(req)
 		// Releasing main resource first to limit number of orphans.
 		if err := m.client.ReleaseOne(req.resource.Name, common.Free); err != nil {
 			logrus.WithError(err).Errorf("failed to release resource %s", req.resource.Name)
+			m.garbageCollect(req)
 			return
 		}
 		// And release leased resources as res.Name state
 		for _, name := range leasedResources {
 			if err := m.client.ReleaseOne(name, res.Name); err != nil {
 				logrus.WithError(err).Errorf("unable to release %s to state %s", name, res.Name)
+				m.garbageCollect(req)
 				return
 			}
 		}
@@ -349,7 +353,7 @@ func (m *Mason) recycleAll(ctx context.Context) {
 		logrus.Info("Exiting recycleAll Thread")
 		m.wg.Done()
 	}()
-	tick := time.NewTicker(m.sleepTime).C
+	tick := time.NewTicker(m.boskosWaitPeriod).C
 	for {
 		select {
 		case <-ctx.Done():
@@ -414,7 +418,7 @@ func (m *Mason) syncAll(ctx context.Context) {
 		logrus.Info("Exiting syncAll Thread")
 		m.wg.Done()
 	}()
-	tick := time.NewTicker(m.sleepTime).C
+	tick := time.NewTicker(m.boskosWaitPeriod).C
 	for {
 		select {
 		case <-ctx.Done():
@@ -438,14 +442,7 @@ func (m *Mason) fulfillAll(ctx context.Context) {
 			return
 		case req := <-m.pending:
 			if err := m.fulfillOne(ctx, &req); err != nil {
-				for _, resources := range req.fulfillment {
-					for _, res := range resources {
-						if err := m.client.ReleaseOne(res.Name, common.Free); err != nil {
-							logrus.WithError(err).Errorf("failed to release resource %s", res.Name)
-						}
-						logrus.Infof("Released resource %s", res.Name)
-					}
-				}
+				m.garbageCollect(req)
 			} else {
 				m.fulfilled <- req
 			}
@@ -455,7 +452,7 @@ func (m *Mason) fulfillAll(ctx context.Context) {
 
 func (m *Mason) fulfillOne(ctx context.Context, req *requirements) error {
 	// Making a copy
-	tick := time.NewTicker(m.sleepTime).C
+	tick := time.NewTicker(m.boskosWaitPeriod).C
 	needs := common.ResourceNeeds{}
 	for k, v := range req.needs {
 		needs[k] = v
@@ -548,12 +545,18 @@ func (m *Mason) Start() {
 // Stop Mason
 func (m *Mason) Stop() {
 	logrus.Info("Stopping Mason")
-	m.cancel()
+	if m.cancel != nil {
+		m.cancel()
+	}
 	m.wg.Wait()
 	close(m.pending)
 	close(m.cleaned)
 	close(m.fulfilled)
 	close(m.serializedClientOps.queue)
+	// Attempting to sync all client ops
+	for fn := range m.serializedClientOps.queue {
+		fn()
+	}
 	m.client.ReleaseAll(common.Dirty)
 	logrus.Info("Mason stopped")
 }

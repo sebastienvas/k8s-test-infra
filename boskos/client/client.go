@@ -139,11 +139,11 @@ func (c *Client) UpdateAll(state string) error {
 	}
 	var allErrors error
 	for _, r := range resources {
-		if err := c.update(r.GetName(), state, nil); err != nil {
+		if err := c.update(r.GetName(), state, common.UserData{}); err != nil {
 			allErrors = multierror.Append(allErrors, err)
 			continue
 		}
-		if err := c.updateLocalResource(r, state, nil); err != nil {
+		if err := c.updateLocalResource(r, state, common.UserData{}); err != nil {
 			allErrors = multierror.Append(allErrors, err)
 		}
 	}
@@ -170,7 +170,7 @@ func (c *Client) SyncAll() error {
 			allErrors = multierror.Append(allErrors, err)
 			continue
 		}
-		if err := c.update(r.Name, r.State, nil); err != nil {
+		if err := c.update(r.Name, r.State, common.UserData{}); err != nil {
 			allErrors = multierror.Append(allErrors, err)
 			continue
 		}
@@ -222,11 +222,7 @@ func (c *Client) updateLocalResource(i common.Item, state string, data common.Us
 		return err
 	}
 	res.State = state
-	if res.UserData == nil {
-		res.UserData = data
-	} else {
-		res.UserData.Update(data)
-	}
+	res.UserData.Update(data)
 	return c.storage.Update(res)
 }
 
@@ -299,7 +295,7 @@ func (c *Client) release(name, dest string) error {
 
 func (c *Client) update(name, state string, userData common.UserData) error {
 	var body io.Reader
-	if userData != nil {
+	if len(userData.ToMap()) != 0 {
 		b := new(bytes.Buffer)
 		err := json.NewEncoder(b).Encode(userData)
 		if err != nil {

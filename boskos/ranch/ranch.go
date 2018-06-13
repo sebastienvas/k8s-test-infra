@@ -236,9 +236,6 @@ func (r *Ranch) Update(name, owner, state string, ud common.UserData) error {
 	if state != res.State {
 		return &StateNotMatch{res.State, state}
 	}
-	if res.UserData == nil {
-		res.UserData = common.UserData{}
-	}
 	res.UserData.Update(ud)
 	res.LastUpdate = r.UpdateTime()
 	if err := r.Storage.UpdateResource(res); err != nil {

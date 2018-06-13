@@ -25,6 +25,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//boskos/client:go_default_library",
+        "//boskos/common:go_default_library",
         "//kubetest/conformance:go_default_library",
         "//kubetest/dind:go_default_library",
         "//kubetest/e2e:go_default_library",

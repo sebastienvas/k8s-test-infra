@@ -208,7 +208,7 @@ func TestUpdate(t *testing.T) {
 		if tc.res == "" {
 			err = c.UpdateAll("s")
 		} else {
-			err = c.UpdateOne(tc.res, "s", nil)
+			err = c.UpdateOne(tc.res, "s", common.UserData{})
 		}
 
 		if !AreErrorsEqual(err, tc.expectErr) {

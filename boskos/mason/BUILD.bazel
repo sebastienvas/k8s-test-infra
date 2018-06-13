@@ -13,9 +13,9 @@ go_library(
         "//boskos/common:go_default_library",
         "//boskos/storage:go_default_library",
         "//vendor/github.com/deckarep/golang-set:go_default_library",
+        "//vendor/github.com/ghodss/yaml:go_default_library",
         "//vendor/github.com/hashicorp/go-multierror:go_default_library",
         "//vendor/github.com/sirupsen/logrus:go_default_library",
-        "//vendor/gopkg.in/yaml.v2:go_default_library",
     ],
 )
 

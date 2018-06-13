@@ -55,7 +55,7 @@ func fakeConfigConverter(in string) (Masonable, error) {
 }
 
 func (fc *fakeConfig) Construct(ctx context.Context, res *common.Resource, typeToRes common.TypeToResources) (common.UserData, error) {
-	return common.UserData{"fakeConfig": "unused"}, nil
+	return common.UserDataFromMap(map[string]string{"fakeConfig": "unused"}), nil
 }
 
 // Create a fake client
@@ -233,6 +233,7 @@ func TestFulfillOne(t *testing.T) {
 	if err = m.fulfillOne(context.Background(), &req); err != nil {
 		t.Errorf("could not satisty requirements ")
 	}
+	m.Stop()
 	if len(req.fulfillment) != 1 {
 		t.Errorf("there should be only one type")
 	}
@@ -249,13 +250,14 @@ func TestFulfillOne(t *testing.T) {
 	if res.UserData.Extract(LeasedResources, &leasedResources); err != nil {
 		t.Errorf("unable to extract %s", LeasedResources)
 	}
-	if res.UserData[LeasedResources] != req.resource.UserData[LeasedResources] {
+	if res.UserData.ToMap()[LeasedResources] != req.resource.UserData.ToMap()[LeasedResources] {
 		t.Errorf(
-			"resource user data from requirement %v should be the same as the one received %v",
-			req.resource.UserData[LeasedResources], res.UserData[LeasedResources])
+			"resource user data from requirement %v, should be the same as the one received %v",
+			req.resource.UserData.ToMap()[LeasedResources], res.UserData.ToMap()[LeasedResources])
 	}
 	if len(leasedResources) != 1 {
 		t.Errorf("there should be one leased resource, found %d", len(leasedResources))
+		t.FailNow()
 	}
 	if leasedResources[0] != leasedResource.Name {
 		t.Errorf("Leased resource don t match")

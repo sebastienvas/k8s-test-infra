@@ -429,7 +429,7 @@ func TestUpdate(t *testing.T) {
 
 	for _, tc := range testcases {
 		c := MakeTestRanch(tc.resources)
-		err := c.Update(tc.resName, tc.owner, tc.state, nil)
+		err := c.Update(tc.resName, tc.owner, tc.state, common.UserData{})
 		if !AreErrorsEqual(err, tc.expectErr) {
 			t.Errorf("%s - Got error %v, expect error %v", tc.name, err, tc.expectErr)
 			continue
