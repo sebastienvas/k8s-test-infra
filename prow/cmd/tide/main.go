@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -36,6 +35,7 @@ import (
 	"k8s.io/test-infra/prow/github"
 	"k8s.io/test-infra/prow/kube"
 	"k8s.io/test-infra/prow/logrusutil"
+	"k8s.io/test-infra/prow/metrics"
 	"k8s.io/test-infra/prow/tide"
 )
 
@@ -95,32 +95,23 @@ func main() {
 		}
 	}
 
-	var tokens []string
-	tokens = append(tokens, o.githubTokenFile)
-
 	secretAgent := &config.SecretAgent{}
-	if err := secretAgent.Start(tokens); err != nil {
+	if err := secretAgent.Start([]string{o.githubTokenFile}); err != nil {
 		logrus.WithError(err).Fatal("Error starting secrets agent.")
-	}
-
-	getSecret := func(secretPath string) func() []byte {
-		return func() []byte {
-			return secretAgent.GetSecret(secretPath)
-		}
 	}
 
 	var ghcSync, ghcStatus *github.Client
 	var kc *kube.Client
 	if o.dryRun {
-		ghcSync = github.NewDryRunClient(getSecret(o.githubTokenFile), o.githubEndpoint.Strings()...)
-		ghcStatus = github.NewDryRunClient(getSecret(o.githubTokenFile), o.githubEndpoint.Strings()...)
+		ghcSync = github.NewDryRunClient(secretAgent.GetTokenGenerator(o.githubTokenFile), o.githubEndpoint.Strings()...)
+		ghcStatus = github.NewDryRunClient(secretAgent.GetTokenGenerator(o.githubTokenFile), o.githubEndpoint.Strings()...)
 		if o.deckURL == "" {
 			logrus.Fatal("no deck URL was given for read-only ProwJob access")
 		}
 		kc = kube.NewFakeClient(o.deckURL)
 	} else {
-		ghcSync = github.NewClient(getSecret(o.githubTokenFile), o.githubEndpoint.Strings()...)
-		ghcStatus = github.NewClient(getSecret(o.githubTokenFile), o.githubEndpoint.Strings()...)
+		ghcSync = github.NewClient(secretAgent.GetTokenGenerator(o.githubTokenFile), o.githubEndpoint.Strings()...)
+		ghcStatus = github.NewClient(secretAgent.GetTokenGenerator(o.githubTokenFile), o.githubEndpoint.Strings()...)
 		if o.cluster == "" {
 			kc, err = kube.NewClientInCluster(configAgent.Config().ProwJobNamespace)
 			if err != nil {
@@ -152,12 +143,17 @@ func main() {
 	if err != nil {
 		logrus.WithError(err).Fatal("Error getting bot name.")
 	}
-	gc.SetCredentials(botName, getSecret(o.githubTokenFile))
+	gc.SetCredentials(botName, secretAgent.GetTokenGenerator(o.githubTokenFile))
 
 	c := tide.NewController(ghcSync, ghcStatus, kc, configAgent, gc, nil)
 	defer c.Shutdown()
-
 	server := &http.Server{Addr: ":" + strconv.Itoa(o.port), Handler: c}
+
+	// Push metrics to the configured prometheus pushgateway endpoint.
+	pushGateway := configAgent.Config().PushGateway
+	if pushGateway.Endpoint != "" {
+		go metrics.PushMetrics("tide", pushGateway.Endpoint, pushGateway.Interval)
+	}
 
 	start := time.Now()
 	sync(c)
@@ -187,9 +183,7 @@ func main() {
 }
 
 func sync(c *tide.Controller) {
-	start := time.Now()
 	if err := c.Sync(); err != nil {
 		logrus.WithError(err).Error("Error syncing.")
 	}
-	logrus.WithField("duration", fmt.Sprintf("%v", time.Since(start))).Info("Synced")
 }

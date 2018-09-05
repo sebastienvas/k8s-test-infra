@@ -45,10 +45,11 @@ import (
 )
 
 type options struct {
-	configPath string
-	selector   string
-	totURL     string
-	deckURL    string
+	configPath    string
+	jobConfigPath string
+	selector      string
+	totURL        string
+	deckURL       string
 
 	jenkinsURL             string
 	jenkinsUserName        string
@@ -92,6 +93,7 @@ func gatherOptions() options {
 		githubEndpoint: flagutil.NewStrings("https://api.github.com"),
 	}
 	flag.StringVar(&o.configPath, "config-path", "/etc/config/config.yaml", "Path to config.yaml.")
+	flag.StringVar(&o.jobConfigPath, "job-config-path", "", "Path to prow job configs.")
 	flag.StringVar(&o.selector, "label-selector", kube.EmptySelector, "Label selector to be applied in prowjobs. See https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#label-selectors for constructing a label selector.")
 	flag.StringVar(&o.totURL, "tot-url", "", "Tot URL")
 	flag.StringVar(&o.deckURL, "deck-url", "", "Deck URL for read-only access to the cluster.")
@@ -126,7 +128,7 @@ func main() {
 	}
 
 	configAgent := &config.Agent{}
-	if err := configAgent.Start(o.configPath, ""); err != nil {
+	if err := configAgent.Start(o.configPath, o.jobConfigPath); err != nil {
 		logrus.WithError(err).Fatal("Error starting config agent.")
 	}
 
@@ -156,20 +158,14 @@ func main() {
 		logrus.WithError(err).Fatal("Error starting secrets agent.")
 	}
 
-	getSecret := func(secretPath string) func() []byte {
-		return func() []byte {
-			return secretAgent.GetSecret(secretPath)
-		}
-	}
-
 	if o.jenkinsTokenFile != "" {
 		ac.Basic = &jenkins.BasicAuthConfig{
 			User:     o.jenkinsUserName,
-			GetToken: getSecret(o.jenkinsTokenFile),
+			GetToken: secretAgent.GetTokenGenerator(o.jenkinsTokenFile),
 		}
 	} else if o.jenkinsBearerTokenFile != "" {
 		ac.BearerToken = &jenkins.BearerTokenAuthConfig{
-			GetToken: getSecret(o.jenkinsBearerTokenFile),
+			GetToken: secretAgent.GetTokenGenerator(o.jenkinsBearerTokenFile),
 		}
 	}
 	var tlsConfig *tls.Config
@@ -196,10 +192,10 @@ func main() {
 
 	var ghc *github.Client
 	if o.dryRun {
-		ghc = github.NewDryRunClient(getSecret(o.githubTokenFile), o.githubEndpoint.Strings()...)
+		ghc = github.NewDryRunClient(secretAgent.GetTokenGenerator(o.githubTokenFile), o.githubEndpoint.Strings()...)
 		kc = kube.NewFakeClient(o.deckURL)
 	} else {
-		ghc = github.NewClient(getSecret(o.githubTokenFile), o.githubEndpoint.Strings()...)
+		ghc = github.NewClient(secretAgent.GetTokenGenerator(o.githubTokenFile), o.githubEndpoint.Strings()...)
 	}
 
 	c, err := jenkins.NewController(kc, jc, ghc, nil, configAgent, o.totURL, o.selector)

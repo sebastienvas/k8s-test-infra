@@ -197,24 +197,51 @@ func TestHttpResponse(t *testing.T) {
 	img := ts2.URL + "/cat.jpg"
 	bigimg := ts2.URL + "/bigcat.jpg"
 	src := "http://localhost?kind=source_url"
-	validResponse := fmt.Sprintf(`<response><data><images><image><url>%s</url><source_url>%s</source_url></image></images></data></response>`, img, src)
+	validResponse := fmt.Sprintf(`[{"id":"valid","url":"%s","source_url":"%s"}]`, img, src)
 	var testcases = []struct {
 		name     string
 		path     string
 		response string
-		isValid  bool
+		valid    bool
+		code     int
 	}{
 		{
 			name:     "valid",
 			path:     "/valid",
-			response: fmt.Sprintf(`<response><data><images><image><url>%s</url><source_url>%s</source_url></image></images></data></response>`, img, src),
-			isValid:  true,
+			response: validResponse,
+			valid:    true,
 		},
 		{
 			name:     "image too big",
 			path:     "/too-big",
-			response: fmt.Sprintf(`<response><data><images><image><url>%s</url><source_url>%s</source_url></image></images></data></response>`, bigimg, src),
-			isValid:  false,
+			response: fmt.Sprintf(`[{"id":"toobig","url":"%s","source_url":"%s"}]`, bigimg, src),
+		},
+		{
+			name: "return-406",
+			path: "/return-406",
+			code: 406,
+			response: `
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head>
+<title>406 Not Acceptable</title>
+</head><body>
+<h1>Not Acceptable</h1>
+<p>An appropriate representation of the requested resource /api/images/get could not be found on this server.</p>
+Available variants:
+<ul>
+<li><a href="get.php">get.php</a> , type x-mapp-php5</li>
+</ul>
+</body></html>`,
+		},
+		{
+			name:     "no-cats-in-json",
+			path:     "/no-cats-in-json",
+			response: "[]",
+		},
+		{
+			name:     "no-image-in-json",
+			path:     "/no-image-in-json",
+			response: "[{}]",
 		},
 	}
 
@@ -223,7 +250,15 @@ func TestHttpResponse(t *testing.T) {
 	for _, testcase := range testcases {
 		pathToResponse[testcase.path] = testcase.response
 	}
+	codes := make(map[string]int)
+	for _, tc := range testcases {
+		codes[tc.path] = tc.code
+	}
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		code := codes[r.URL.Path]
+		if code > 0 {
+			w.WriteHeader(code)
+		}
 		if r, ok := pathToResponse[r.URL.Path]; ok {
 			io.WriteString(w, r)
 		} else {
@@ -241,10 +276,12 @@ func TestHttpResponse(t *testing.T) {
 	for _, testcase := range testcases {
 		fakemeow := &realClowder{url: ts.URL + testcase.path}
 		cat, err := fakemeow.readCat(*category)
-		if testcase.isValid && err != nil {
+		if testcase.valid && err != nil {
 			t.Errorf("For case %s, didn't expect error: %v", testcase.name, err)
-		} else if !testcase.isValid && err == nil {
+		} else if !testcase.valid && err == nil {
 			t.Errorf("For case %s, expected error, received cat: %s", testcase.name, cat)
+		} else if testcase.valid && cat == "" {
+			t.Errorf("For case %s, got an empty cat", testcase.name)
 		}
 	}
 

@@ -1,7 +1,6 @@
 postsubmits:
   kubernetes/test-infra:
   - name: ci-test-infra-bazel
-    agent: kubernetes
     branches:
     - master
     labels:
@@ -10,7 +9,7 @@ postsubmits:
       preset-bazel-remote-cache-enabled: "true"
     spec:
       containers:
-      - image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-experimental
+      - image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-experimental
         args:
         - "--job=$(JOB_NAME)"
         - "--repo=k8s.io/$(REPO_NAME)=$(PULL_REFS)"
@@ -30,7 +29,6 @@ postsubmits:
             memory: "2Gi"
 
   - name: maintenance-boskos-config-upload
-    agent: kubernetes
     branches:
     - master
     labels:
@@ -59,7 +57,6 @@ postsubmits:
           secretName: prow-build-service
 
   - name: maintenance-ci-testgrid-config-upload
-    agent: kubernetes
     branches:
     - master
     labels:
@@ -67,7 +64,7 @@ postsubmits:
       preset-bazel-scratch-dir: "true"
     spec:
       containers:
-      - image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-experimental
+      - image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-experimental
         args:
         - "--job=$(JOB_NAME)"
         - "--repo=k8s.io/$(REPO_NAME)=$(PULL_REFS)"

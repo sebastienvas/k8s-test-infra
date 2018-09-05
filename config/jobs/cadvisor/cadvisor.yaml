@@ -19,17 +19,13 @@ presets:
 presubmits:
   google/cadvisor:
   - name: pull-cadvisor-e2e
-    agent: kubernetes
     always_run: true
-    context: pull-cadvisor-e2e
-    rerun_command: "/test pull-cadvisor-e2e"
-    trigger: "(?m)^/test( all| pull-cadvisor-e2e),?(\\s+|$)"
     labels:
       preset-service-account: "true"
       preset-k8s-ssh: "true"
     spec:
       containers:
-      - image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      - image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
         args:
         - "--job=$(JOB_NAME)"
         - "--repo=k8s.io/kubernetes"
@@ -52,13 +48,13 @@ presubmits:
 periodics:
 - interval: 24h
   name: ci-cadvisor-canarypush
-  agent: kubernetes
   labels:
     preset-service-account: "true"
     preset-cadvisor-docker-credential: "true"
+    preset-dind-enabled: "true"
   spec:
     containers:
-    - image: gcr.io/k8s-testimages/bootstrap:v20180510-809cd85b5
+    - image: gcr.io/k8s-testimages/bootstrap:v20180730-c3257f6c0
       args:
       - --repo=github.com/google/cadvisor
       - --root=/go/src
@@ -68,28 +64,18 @@ periodics:
       - --file=deploy/canary/Dockerfile
       - --owner=stclair@google.com
       - --target=google/cadvisor:canary
-      env:
-      - name: DOCKER_IN_DOCKER_ENABLED
-        value: "true"
       # docker-in-docker needs privileged mode
       securityContext:
         privileged: true
-      volumeMounts:
-      - name: docker-graph
-        mountPath: /docker-graph
-    volumes:
-    - name: docker-graph
-      emptyDir: {}
 
 - name: ci-cadvisor-e2e
   interval: 8h
-  agent: kubernetes
   labels:
     preset-service-account: "true"
     preset-k8s-ssh: "true"
   spec:
     containers:
-    - image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+    - image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
       args:
       - --job=$(JOB_NAME)
       - --root=/go/src

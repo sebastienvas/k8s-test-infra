@@ -1,13 +1,10 @@
 presubmits:
   kubernetes-sigs/cluster-api-provider-openstack:
   - name: pull-cluster-api-provider-openstack-make
-    agent: kubernetes
     always_run: true
-    context: pull-cluster-api-provider-openstack-make
-    rerun_command: "/test pull-cluster-api-provider-openstack-make"
-    trigger: "/test( all| pull-cluster-api-provider-openstack-make)"
     labels:
       preset-service-account: "true"
+      preset-dind-enabled: "true"
     spec:
       containers:
       - args:
@@ -19,13 +16,10 @@ presubmits:
         - "--"
         - "make"
         - "images"
-        env:
-        - name: DOCKER_IN_DOCKER_ENABLED
-          value: "true"
         # docker-in-docker needs privileged mode
         securityContext:
           privileged: true
-        image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-1.10
+        image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-1.10
         resources:
           requests:
             memory: "6Gi"

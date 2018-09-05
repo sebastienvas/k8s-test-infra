@@ -318,6 +318,7 @@ span.label:not(.merge-table-label):hover {
     color: #757575;
     font-size: 15px;
     font-weight: bolder;
+    max-width: 170px;
 }
 
 .command-example-list {
@@ -346,6 +347,10 @@ span.label:not(.merge-table-label):hover {
 }
 
 #usage-col {
+    min-width: 200px;
+}
+
+#description-col {
     min-width: 200px;
 }
 
@@ -502,6 +507,33 @@ Plugin Help style
     margin: 0 8px;
     padding: 8px 16px;
 }
+/*
+ * SpyGlass style sheet
+ */
+
+#lens-container {
+  flex-direction: column;
+  flex-wrap: nowrap;
+}
+
+#lens-container .lens-title {
+  text-decoration: underline;
+  padding-bottom: 0;
+}
+
+.lens-card.mdl-card {
+  width: 100%;
+  align-content: center;
+}
+
+#lens-container .lens-view-content {
+  width: calc(100% - 32px);
+}
+
+.lens-card-loading {
+  left: 50%;
+}
+
 /*
  * User dashboard style sheet
  */
@@ -739,7 +771,6 @@ Plugin Help style
 
 .status {
     align-items: center;
-    border-bottom: 1px solid #EFEBE9;
     cursor: pointer;
     background-color: #ffffff;
     display: flex;
@@ -749,6 +780,10 @@ Plugin Help style
     line-height: 24px;
     padding: 12px 16px 2px 17px;
     user-select: none;
+}
+
+.status.expandable {
+    border-bottom: 1px solid #EFEBE9;
 }
 
 .status > .status-icon {
@@ -888,4 +923,16 @@ Plugin Help style
         width: 320px;
     }
 
+}
+
+.alert{
+    padding: 15px;
+    background-color: #FFCB50;
+}
+
+.closebutton {
+    color: black;
+    float: right;
+    font-size: 24px;
+    cursor: pointer;
 }

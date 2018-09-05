@@ -19,6 +19,7 @@ package lgtm
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -29,21 +30,21 @@ import (
 	"k8s.io/test-infra/prow/repoowners"
 )
 
-const pluginName = "lgtm"
+const PluginName = "lgtm"
 
 var (
-	lgtmLabel           = "lgtm"
+	LgtmLabel           = "lgtm"
 	lgtmRe              = regexp.MustCompile(`(?mi)^/lgtm(?: no-issue)?\s*$`)
 	lgtmCancelRe        = regexp.MustCompile(`(?mi)^/lgtm cancel\s*$`)
 	removeLGTMLabelNoti = "New changes are detected. LGTM label has been removed."
 )
 
 func init() {
-	plugins.RegisterGenericCommentHandler(pluginName, handleGenericCommentEvent, helpProvider)
-	plugins.RegisterPullRequestHandler(pluginName, func(pc plugins.PluginClient, pe github.PullRequestEvent) error {
+	plugins.RegisterGenericCommentHandler(PluginName, handleGenericCommentEvent, helpProvider)
+	plugins.RegisterPullRequestHandler(PluginName, func(pc plugins.PluginClient, pe github.PullRequestEvent) error {
 		return handlePullRequest(pc.GitHubClient, pe, pc.Logger)
 	}, helpProvider)
-	plugins.RegisterReviewEventHandler(pluginName, handlePullRequestReviewEvent, helpProvider)
+	plugins.RegisterReviewEventHandler(PluginName, handlePullRequestReviewEvent, helpProvider)
 }
 
 func helpProvider(config *plugins.Configuration, enabledRepos []string) (*pluginhelp.PluginHelp, error) {
@@ -56,7 +57,7 @@ func helpProvider(config *plugins.Configuration, enabledRepos []string) (*plugin
 		Description: "Adds or removes the 'lgtm' label which is typically used to gate merging.",
 		Featured:    true,
 		WhoCanUse:   "Collaborators on the repository. '/lgtm cancel' can be used additionally by the PR author.",
-		Examples:    []string{"/lgtm", "/lgtm cancel", "toggle the Review button to 'Approve' or 'Request Changes' in the github GUI"},
+		Examples:    []string{"/lgtm", "/lgtm cancel", "<a href=\"https://help.github.com/articles/about-pull-request-reviews/\">'Approve' or 'Request Changes'</a>"},
 	})
 	return pluginHelp, nil
 }
@@ -171,12 +172,17 @@ func handlePullRequestReview(gc githubClient, config *plugins.Configuration, own
 		return nil
 	}
 
+	// The review webhook returns state as lowercase, while the review API
+	// returns state as uppercase. Uppercase the value here so it always
+	// matches the constant.
+	reviewState := github.ReviewState(strings.ToUpper(string(e.Review.State)))
+
 	// If we review with Approve, add lgtm if necessary.
 	// If we review with Request Changes, remove lgtm if necessary.
 	wantLGTM := false
-	if e.Review.State == github.ReviewStateApproved {
+	if reviewState == github.ReviewStateApproved {
 		wantLGTM = true
-	} else if e.Review.State == github.ReviewStateChangesRequested {
+	} else if reviewState == github.ReviewStateChangesRequested {
 		wantLGTM = false
 	} else {
 		return nil
@@ -250,14 +256,14 @@ func handle(wantLGTM bool, config *plugins.Configuration, ownersClient repoowner
 		log.WithError(err).Errorf("Failed to get the labels on %s/%s#%d.", org, repoName, number)
 	}
 
-	hasLGTM = github.HasLabel(lgtmLabel, labels)
+	hasLGTM = github.HasLabel(LgtmLabel, labels)
 
 	if hasLGTM && !wantLGTM {
 		log.Info("Removing LGTM label.")
-		return gc.RemoveLabel(org, repoName, number, lgtmLabel)
+		return gc.RemoveLabel(org, repoName, number, LgtmLabel)
 	} else if !hasLGTM && wantLGTM {
 		log.Info("Adding LGTM label.")
-		if err := gc.AddLabel(org, repoName, number, lgtmLabel); err != nil {
+		if err := gc.AddLabel(org, repoName, number, LgtmLabel); err != nil {
 			return err
 		}
 		// Delete the LGTM removed noti after the LGTM label is added.
@@ -301,7 +307,7 @@ func handlePullRequest(gc ghLabelClient, pe github.PullRequestEvent, log *logrus
 	number := pe.PullRequest.Number
 
 	var labelNotFound bool
-	if err := gc.RemoveLabel(org, repo, number, lgtmLabel); err != nil {
+	if err := gc.RemoveLabel(org, repo, number, LgtmLabel); err != nil {
 		if _, labelNotFound = err.(*github.LabelNotFound); !labelNotFound {
 			return fmt.Errorf("failed removing lgtm label: %v", err)
 		}

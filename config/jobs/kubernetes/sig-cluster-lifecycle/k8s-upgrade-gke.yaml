@@ -1,7 +1,6 @@
 periodics:
 # GKE upgrades
 - interval: 2h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-gci-new-gci-master-upgrade-cluster
   labels:
     preset-service-account: "true"
@@ -26,10 +25,9 @@ periodics:
       - --test_args=--ginkgo.focus=\[Slow\]|\[Serial\]|\[Disruptive\] --ginkgo.skip=\[Flaky\]|\[Feature:.+\] --kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=900m
       - --upgrade_args=--ginkgo.focus=\[Feature:ClusterUpgrade\] --upgrade-target=ci/latest --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 2h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-gci-new-gci-master-upgrade-cluster-new
   labels:
     preset-service-account: "true"
@@ -54,10 +52,9 @@ periodics:
       - --skew
       - --timeout=900m
       - --upgrade_args=--ginkgo.focus=\[Feature:ClusterUpgrade\] --upgrade-target=ci/latest --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 2h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-gci-new-gci-master-upgrade-cluster-parallel
   labels:
     preset-service-account: "true"
@@ -83,10 +80,9 @@ periodics:
       - --test_args=--ginkgo.skip=\[Slow\]|\[Serial\]|\[Disruptive\]|\[Flaky\]|\[Feature:.+\] --kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=120m
       - --upgrade_args=--ginkgo.focus=\[Feature:ClusterUpgrade\] --upgrade-target=ci/latest --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 2h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-gci-new-gci-master-upgrade-master
   labels:
     preset-service-account: "true"
@@ -111,10 +107,9 @@ periodics:
       - --test_args=--kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=900m
       - --upgrade_args=--ginkgo.focus=\[Feature:MasterUpgrade\] --upgrade-target=ci/latest --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 2h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-gci-stable-gci-master-upgrade-master
   labels:
     preset-service-account: "true"
@@ -139,10 +134,9 @@ periodics:
       - --test_args=--kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=900m
       - --upgrade_args=--ginkgo.focus=\[Feature:MasterUpgrade\] --upgrade-target=ci/k8s-stable2 --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 12h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-gci-stable1-gci-stable2-downgrade-cluster
   labels:
     preset-service-account: "true"
@@ -168,10 +162,9 @@ periodics:
       - --test_args=--ginkgo.focus=\[Slow\]|\[Serial\]|\[Disruptive\] --ginkgo.skip=\[Flaky\]|\[Feature:.+\] --kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=900m
       - --upgrade_args=--ginkgo.focus=\[Feature:ClusterDowngrade\] --upgrade-target=ci/k8s-stable2 --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 12h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-gci-stable1-gci-stable2-downgrade-cluster-parallel
   labels:
     preset-service-account: "true"
@@ -198,10 +191,9 @@ periodics:
       - --test_args=--ginkgo.skip=\[Slow\]|\[Serial\]|\[Disruptive\]|\[Flaky\]|\[Feature:.+\] --kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=120m
       - --upgrade_args=--ginkgo.focus=\[Feature:ClusterDowngrade\] --upgrade-target=ci/k8s-stable2 --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 12h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-gci-stable2-gci-stable1-upgrade-cluster
   labels:
     preset-service-account: "true"
@@ -227,10 +219,9 @@ periodics:
       - --test_args=--kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=900m
       - --upgrade_args=--ginkgo.focus=\[Feature:ClusterUpgrade\] --upgrade-target=ci/k8s-stable1 --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 12h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-gci-stable2-gci-stable1-upgrade-cluster-new
   labels:
     preset-service-account: "true"
@@ -256,10 +247,9 @@ periodics:
       - --skew
       - --timeout=900m
       - --upgrade_args=--ginkgo.focus=\[Feature:ClusterUpgrade\] --upgrade-target=ci/k8s-stable1 --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 12h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-gci-stable2-gci-stable1-upgrade-master
   labels:
     preset-service-account: "true"
@@ -285,10 +275,9 @@ periodics:
       - --test_args=--kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=900m
       - --upgrade_args=--ginkgo.focus=\[Feature:MasterUpgrade\] --upgrade-target=ci/k8s-stable1 --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 2h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-gci-stable3-gci-stable1-upgrade-cluster
   labels:
     preset-service-account: "true"
@@ -314,10 +303,9 @@ periodics:
       - --test_args=--ginkgo.skip=\[Slow\]|\[Serial\]|\[Disruptive\]|\[Flaky\]|\[Feature:.+\] --kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=120m
       - --upgrade_args=--ginkgo.focus=\[Feature:ClusterUpgrade\] --upgrade-target=ci/k8s-stable1 --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 2h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-gci-stable3-gci-stable1-upgrade-cluster-new
   labels:
     preset-service-account: "true"
@@ -344,10 +332,9 @@ periodics:
       - --test_args=--ginkgo.skip=\[Slow\]|\[Serial\]|\[Disruptive\]|\[Flaky\]|\[Feature:.+\] --minStartupPods=8
       - --timeout=120m
       - --upgrade_args=--ginkgo.focus=\[Feature:ClusterUpgrade\] --upgrade-target=ci/k8s-stable1 --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 2h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-gci-stable3-gci-stable1-upgrade-master
   labels:
     preset-service-account: "true"
@@ -373,10 +360,9 @@ periodics:
       - --test_args=--ginkgo.skip=\[Slow\]|\[Serial\]|\[Disruptive\]|\[Flaky\]|\[Feature:.+\] --kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=120m
       - --upgrade_args=--ginkgo.focus=\[Feature:MasterUpgrade\] --upgrade-target=ci/k8s-stable1 --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 2h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-stable1-beta-upgrade-cluster
   labels:
     preset-service-account: "true"
@@ -402,10 +388,9 @@ periodics:
       - --test_args=--kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=900m
       - --upgrade_args=--ginkgo.focus=\[Feature:ClusterUpgrade\] --upgrade-target=ci/k8s-stable1 --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 2h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-stable1-beta-upgrade-cluster-new
   labels:
     preset-service-account: "true"
@@ -431,10 +416,9 @@ periodics:
       - --skew
       - --timeout=900m
       - --upgrade_args=--ginkgo.focus=\[Feature:ClusterUpgrade\] --upgrade-target=ci/k8s-beta --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 2h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-stable1-beta-upgrade-master
   labels:
     preset-service-account: "true"
@@ -460,10 +444,9 @@ periodics:
       - --test_args=--kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=900m
       - --upgrade_args=--ginkgo.focus=\[Feature:MasterUpgrade\] --upgrade-target=ci/k8s-beta --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 2h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-beta-stable1-downgrade-cluster
   labels:
     preset-service-account: "true"
@@ -489,10 +472,9 @@ periodics:
       - --test_args=--ginkgo.focus=\[Slow\]|\[Serial\]|\[Disruptive\] --ginkgo.skip=\[Flaky\]|\[Feature:.+\] --kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=900m
       - --upgrade_args=--ginkgo.focus=\[Feature:ClusterDowngrade\] --upgrade-target=ci/k8s-stable1 --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 2h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-beta-stable1-downgrade-cluster-parallel
   labels:
     preset-service-account: "true"
@@ -519,10 +501,9 @@ periodics:
       - --test_args=--ginkgo.skip=\[Slow\]|\[Serial\]|\[Disruptive\]|\[Flaky\]|\[Feature:.+\] --kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=120m
       - --upgrade_args=--ginkgo.focus=\[Feature:ClusterDowngrade\] --upgrade-target=ci/k8s-stable1 --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 2h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-gci-master-gci-new-downgrade-cluster
   labels:
     preset-service-account: "true"
@@ -548,10 +529,9 @@ periodics:
       - --test_args=--ginkgo.focus=\[Slow\]|\[Serial\]|\[Disruptive\] --ginkgo.skip=\[Flaky\]|\[Feature:.+\] --kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=900m
       - --upgrade_args=--ginkgo.focus=\[Feature:ClusterDowngrade\] --upgrade-target=ci/k8s-stable1 --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master
 
 - interval: 2h
-  agent: kubernetes
   name: ci-kubernetes-e2e-gke-gci-master-gci-new-downgrade-cluster-parallel
   labels:
     preset-service-account: "true"
@@ -578,4 +558,4 @@ periodics:
       - --test_args=--ginkgo.skip=\[Slow\]|\[Serial\]|\[Disruptive\]|\[Flaky\]|\[Feature:.+\] --kubectl-path=../../../../kubernetes_skew/cluster/kubectl.sh --minStartupPods=8
       - --timeout=120m
       - --upgrade_args=--ginkgo.focus=\[Feature:ClusterDowngrade\] --upgrade-target=ci/k8s-stable1 --upgrade-image=gci
-      image: gcr.io/k8s-testimages/kubekins-e2e:v20180725-795cceb4c-master
+      image: gcr.io/k8s-testimages/kubekins-e2e:v20180829-29e661965-master

@@ -26,6 +26,8 @@ import (
 	"path/filepath"
 
 	"github.com/ghodss/yaml"
+	"k8s.io/apimachinery/pkg/util/sets"
+
 	prow_config "k8s.io/test-infra/prow/config"
 	config_pb "k8s.io/test-infra/testgrid/config"
 )
@@ -43,6 +45,7 @@ var (
 		"kopeio",
 		"tectonic",
 		"redhat",
+		"vmware",
 	}
 	orgs = []string{
 		"conformance",
@@ -169,8 +172,11 @@ func TestConfig(t *testing.T) {
 			t.Errorf("Dashboard %v: - Must have more than one dashboardtab", dashboard.Name)
 		}
 
-		// dashboardtab name set, to check duplicated tabs within each dashboard
-		dashboardtabmap := make(map[string]bool)
+		// dashboardtabSet is a set that checks duplicate tab name within each dashboard
+		dashboardtabSet := sets.NewString()
+
+		// dashboardtestgroupSet is a set that checks duplicate testgroups within each dashboard
+		dashboardtestgroupSet := sets.NewString()
 
 		// All notifications in dashboard must have a summary
 		if len(dashboard.Notifications) != 0 {
@@ -189,10 +195,17 @@ func TestConfig(t *testing.T) {
 			}
 
 			// All dashboardtab within a dashboard must not have duplicated names
-			if dashboardtabmap[dashboardtab.Name] {
-				t.Errorf("Duplicated dashboardtab: %v", dashboardtab.Name)
+			if dashboardtabSet.Has(dashboardtab.Name) {
+				t.Errorf("Duplicated name in dashboard %s: %v", dashboard.Name, dashboardtab.Name)
 			} else {
-				dashboardtabmap[dashboardtab.Name] = true
+				dashboardtabSet.Insert(dashboardtab.Name)
+			}
+
+			// All dashboardtab within a dashboard must not have duplicated testgroupnames
+			if dashboardtestgroupSet.Has(dashboardtab.TestGroupName) {
+				t.Errorf("Duplicated testgroupnames in dashboard %s: %v", dashboard.Name, dashboardtab.TestGroupName)
+			} else {
+				dashboardtestgroupSet.Insert(dashboardtab.TestGroupName)
 			}
 
 			// All testgroup in dashboard must be defined in testgroups
@@ -357,6 +370,7 @@ func TestJobsTestgridEntryMatch(t *testing.T) {
 		"bazelbuild/rules_k8s",
 		"google/cadvisor",
 		"helm/charts",
+		"kubeflow/arena",
 		"kubeflow/caffe2-operator",
 		"kubeflow/examples",
 		"kubeflow/experimental-beagle",
@@ -365,8 +379,10 @@ func TestJobsTestgridEntryMatch(t *testing.T) {
 		"kubeflow/katib",
 		"kubeflow/kubebench",
 		"kubeflow/kubeflow",
+		"kubeflow/chainer-operator",
 		"kubeflow/mpi-operator",
 		"kubeflow/pytorch-operator",
+		"kubeflow/mxnet-operator",
 		"kubeflow/reporting",
 		"kubeflow/testing",
 		"kubeflow/tf-operator",
@@ -377,6 +393,7 @@ func TestJobsTestgridEntryMatch(t *testing.T) {
 		"kubernetes-sigs/cluster-api-provider-openstack",
 		"kubernetes-sigs/poseidon",
 		"kubernetes/cluster-registry",
+		"kubernetes/cloud-provider-vsphere",
 		"kubernetes/federation",
 		"kubernetes/heapster",
 		"kubernetes/kops",

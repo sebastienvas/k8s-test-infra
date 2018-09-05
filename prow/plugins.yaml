@@ -5,6 +5,8 @@
 triggers:
 - repos:
   - kubernetes
+  - kubernetes-client
+  - kubernetes-csi
   - kubernetes-incubator
   - kubernetes-security
   - kubernetes-sigs
@@ -27,20 +29,24 @@ triggers:
   join_org_url: "https://github.com/tensorflow/minigo/blob/master/CONTRIBUTING.md"
 - repos:
   - bazelbuild
+
 owners:
   mdyamlrepos:
   - kubernetes/website
 
 approve:
 - repos:
+  - kubernetes/cloud-provider-azure
   - kubernetes/cluster-registry
   - kubernetes/contrib
   - kubernetes/dashboard
+  - kubernetes/dns
   - kubernetes/examples
   - kubernetes/features
   - kubernetes/federation
   - kubernetes/gengo
   - kubernetes/heapster
+  - kubernetes/ingress-gce
   - kubernetes/ingress-nginx
   - kubernetes/kops
   - kubernetes/kube-deploy
@@ -58,9 +64,13 @@ approve:
   - kubernetes/sig-release
   - kubernetes/steering
   - kubernetes/test-infra
+  - kubernetes/utils
+  - kubernetes-incubator/ip-masq-agent
   implicit_self_approve: true
   lgtm_acts_as_approve: true
 - repos:
+  - kubernetes-client
+  - kubernetes-csi
   - kubernetes-sigs
   - client-go/unofficial-docs
   implicit_self_approve: true
@@ -72,6 +82,14 @@ approve:
   - helm/charts
   implicit_self_approve: true
   lgtm_acts_as_approve: true
+
+# Lower bounds in number of lines changed; XS is assumed to be zero.
+size:
+  s:   10
+  m:   30
+  l:   100
+  xl:  500
+  xxl: 1000
 
 lgtm:
 - repos:
@@ -111,6 +129,11 @@ blockades:
   - ^events/2016
   - ^events/elections/2017
   explanation: "These files are historical, and from events that have already occurred."
+- repos:
+  - kubernetes/sig-release
+  blockregexps:
+  - ^releases/release-1\.[0-9]
+  explanation: "These files represent previous release collateral and have been protected for historical purposes."
 
 blunderbuss:
   max_request_count: 2
@@ -147,6 +170,10 @@ slack:
             - maciekpytel # 1.10 patch release manager
         release-1.11:
             - foxish # 1.11 patch release manager
+        release-1.12:
+            - dougm # 1.12 branch manager
+            - hoegaarden # 1.12 branch manager shadow
+            - idealhack # 1.12 branch manager shadow
         feature-serverside-apply:
             - lavalamp # feature-serverside-apply "branch manager"
             - apelisse # feature-serverside-apply "branch manager"
@@ -176,6 +203,39 @@ config_updater:
       name: plugins
     config/jobs/**/*.yaml:
       name: job-config
+
+welcome:
+  message_template: "Welcome @{{.AuthorLogin}}! It looks like this is your first PR to {{.Org}}/{{.Repo}} 🎉"
+
+require_matching_label:
+- missing_label: needs-kind
+  org: kubernetes
+  repo: kubernetes
+  prs: true
+  regexp: ^kind/
+- missing_label: needs-sig
+  org: kubernetes
+  repo: kubernetes
+  prs: true
+  regexp: ^(sig|wg|committee)/
+  # Define needs-sig separately for issues so that we only comment on issues.
+- missing_label: needs-sig
+  org: kubernetes
+  repo: kubernetes
+  issues: true
+  regexp: ^(sig|wg|committee)/
+  missing_comment: |
+    There are no sig labels on this issue. Please add a sig label by either:
+
+    1. mentioning a sig: `@kubernetes/sig-<group-name>-<group-suffix>`
+        e.g., `@kubernetes/sig-contributor-experience-<group-suffix>` to notify the contributor experience sig, OR
+
+    2. specifying the label manually: `/sig <group-name>`
+        e.g., `/sig scalability` to apply the `sig/scalability` label
+
+    Note: Method 1 will trigger an email to the group. See the [group list](https://git.k8s.io/community/sig-list.md).
+    The `<group-suffix>` in method 1 has to be replaced with one of these: _**bugs, feature-requests, pr-reviews, test-failures, proposals**_.
+
 
 plugins:
   bazelbuild/rules_k8s:
@@ -223,6 +283,26 @@ plugins:
   - hold
   - lgtm
   - trigger
+
+  kubernetes:
+  - assign
+  - cat
+  - cla
+  - dog
+  - golint
+  - heart
+  - help
+  - hold
+  - label
+  - lgtm
+  - lifecycle
+  - shrug
+  - sigmention
+  - size
+  - skip
+  - slackevents
+  - wip
+  - yuks
 
   kubernetes/client-go:
   - approve
@@ -272,6 +352,7 @@ plugins:
   - approve
 
   kubernetes/dns:
+  - approve
   - trigger
 
   kubernetes/examples:
@@ -283,6 +364,7 @@ plugins:
   - stage
 
   kubernetes/ingress-gce:
+  - approve
   - trigger
 
   kubernetes/ingress-nginx:
@@ -318,12 +400,13 @@ plugins:
   - approve
   - blockade
   - blunderbuss
+  - cherry-pick-unapproved
   - docs-no-retest
   - milestone
   - milestonestatus
   - owners-label
   - release-note
-  - require-sig
+  - require-matching-label
   - trigger
 
   kubernetes/kubernetes-docs-ja:
@@ -331,6 +414,10 @@ plugins:
   - blunderbuss
 
   kubernetes/kubernetes-docs-ko:
+  - approve
+  - blunderbuss
+
+  kubernetes/kubernetes-docs-zh:
   - approve
   - blunderbuss
 
@@ -356,11 +443,12 @@ plugins:
   - approve
   - blunderbuss
   - owners-label
-  - require-sig
+  - trigger
 
   kubernetes/perf-tests:
   - approve
   - blunderbuss
+  - trigger
 
   kubernetes/publishing-bot:
   - approve
@@ -375,6 +463,7 @@ plugins:
 
   kubernetes/sig-release:
   - approve
+  - blockade
   - blunderbuss
   - stage
 
@@ -386,20 +475,27 @@ plugins:
   - blunderbuss
   - config-updater
   - milestone
+  - owners-label
   - override
   - trigger
   - verify-owners
+  - welcome
+
+  kubernetes/utils:
+  - approve
+  - blunderbuss
 
   kubernetes/website:
   - approve
   - blunderbuss
 
-  kubernetes:
+  kubernetes-client:
+  - approve
   - assign
+  - blunderbuss
   - cat
   - cla
   - dog
-  - golint
   - heart
   - help
   - hold
@@ -407,10 +503,27 @@ plugins:
   - lgtm
   - lifecycle
   - shrug
-  - sigmention
   - size
   - skip
-  - slackevents
+  - wip
+  - yuks
+
+  kubernetes-csi:
+  - approve
+  - assign
+  - blunderbuss
+  - cat
+  - cla
+  - dog
+  - heart
+  - help
+  - hold
+  - label
+  - lgtm
+  - lifecycle
+  - shrug
+  - size
+  - skip
   - wip
   - yuks
 
@@ -422,18 +535,9 @@ plugins:
   - lifecycle
   - size
 
-  kubernetes-client:
-  - assign
-  - cla
-  - label
-  - lgtm
-  - lifecycle
-  - size
-  - wip
-  - hold
-  - help
-  - cat
-  - dog
+  kubernetes-incubator/kubespray:
+  - approve
+  - blunderbuss
 
   kubernetes-incubator/service-catalog:
   - approve
@@ -446,7 +550,16 @@ plugins:
   - verify-owners
   - wip
 
+  kubernetes-incubator/ip-masq-agent:
+  - approve
+  - hold
+  - trigger
+
+  kubernetes-security/kubernetes:
+  - trigger
+
   kubernetes-sigs:
+  - approve
   - assign
   - blunderbuss
   - cat
@@ -465,55 +578,37 @@ plugins:
   - yuks
 
   kubernetes-sigs/federation-v2:
-  - approve
   - trigger
 
   kubernetes-sigs/testing_frameworks:
-  - approve
   - trigger
 
   kubernetes-sigs/poseidon:
-  - approve
   - trigger
 
   kubernetes-sigs/cluster-api:
-  - approve
   - trigger
 
   kubernetes-sigs/cluster-api-provider-aws:
-  - approve
   - trigger
 
   kubernetes-sigs/cluster-api-provider-gcp:
-  - approve
   - trigger
 
   kubernetes-sigs/cluster-api-provider-openstack:
-  - approve
   - trigger
 
+  kubernetes-sigs/cluster-api-provider-vsphere:
+  - trigger
+
+  kubernetes-sigs/contributor-playground:
+  - require-sig
+
   kubernetes-sigs/gcp-compute-persistent-disk-csi-driver:
-  - approve
   - trigger
 
   kubernetes-sigs/gcp-filestore-csi-driver:
-  - approve
   - trigger
-
-  kubernetes-sigs/application:
-  - approve
-
-  kubernetes-sigs/kubeadm-dind-cluster:
-  - approve
-
-  kubernetes-sigs/kustomize:
-  - approve
-
-  kubernetes-sigs/controller-runtime:
-  - approve  
-
-  kubernetes-sigs/controller-tools:
-  - approve  
 
   containerd/cri:
   - assign
@@ -522,9 +617,6 @@ plugins:
   - lgtm
   - lifecycle
   - size
-  - trigger
-
-  kubernetes-security/kubernetes:
   - trigger
 
   tensorflow/k8s:
@@ -588,6 +680,10 @@ external_plugins:
     events:
       - pull_request
   kubernetes-incubator/service-catalog:
+  - name: needs-rebase
+    events:
+      - pull_request
+  kubernetes-sigs/contributor-playground:
   - name: needs-rebase
     events:
       - pull_request

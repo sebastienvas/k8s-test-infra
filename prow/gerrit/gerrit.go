@@ -212,6 +212,8 @@ func (c *Controller) queryProjectChanges(proj string) ([]gerrit.ChangeInfo, erro
 				continue
 			}
 
+			logrus.Infof("Change %s, last updated %s", change.Number, change.Updated)
+
 			// process if updated later than last updated
 			// stop if update was stale
 			if updated.After(c.lastUpdate) {
@@ -310,11 +312,14 @@ func (c *Controller) ProcessChange(change gerrit.ChangeInfo) error {
 				// Remove this once we have proper report interface.
 
 				// mangle
-				// https://gubernator.k8s.io/build/gob-prow/pr-logs/pull/some-repo/8940/pull-test-infra-presubmit//
+				// https://gubernator.k8s.io/build/gob-prow/pr-logs/pull/some/repo/8940/pull-test-infra-presubmit//
 				// to
-				// https://gubernator.k8s.io/builds/gob-prow/pr-logs/pull/some-repo/8940/pull-test-infra-presubmit/
+				// https://gubernator.k8s.io/builds/gob-prow/pr-logs/pull/some_repo/8940/pull-test-infra-presubmit/
 				url = b.String()
 				url = strings.Replace(url, "build", "builds", 1)
+				// TODO(krzyzacy): gerrit path can be foo.googlesource.com/bar/baz, which means we took bar/baz as the repo
+				// we are mangling the path in bootstrap.py, we need to handle this better in podutils
+				url = strings.Replace(url, change.Project, strings.Replace(change.Project, "/", "_", -1), 1)
 				url = strings.TrimSuffix(url, "//")
 			}
 			triggeredJobs = append(triggeredJobs, triggeredJob{Name: spec.Name, URL: url})

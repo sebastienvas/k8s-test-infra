@@ -114,21 +114,13 @@ func main() {
 			logrus.WithError(err).Fatal("Error starting secrets agent.")
 		}
 
-		getSecret := func(secretPath string) func() []byte {
-			return func() []byte {
-				return secretAgent.GetSecret(secretPath)
-			}
-		}
-
 		if o.dryRun {
-			if string(getSecret(o.githubTokenFile)()) != "" {
-				ghc = github.NewDryRunClient(getSecret(o.githubTokenFile),
-					o.githubEndpoint.Strings()...)
+			if string(secretAgent.GetTokenGenerator(o.githubTokenFile)()) != "" {
+				ghc = github.NewDryRunClient(secretAgent.GetTokenGenerator(o.githubTokenFile), o.githubEndpoint.Strings()...)
 			}
 		} else {
-			if string(getSecret(o.githubTokenFile)()) != "" {
-				ghc = github.NewClient(getSecret(o.githubTokenFile),
-					o.githubEndpoint.Strings()...)
+			if string(secretAgent.GetTokenGenerator(o.githubTokenFile)()) != "" {
+				ghc = github.NewClient(secretAgent.GetTokenGenerator(o.githubTokenFile), o.githubEndpoint.Strings()...)
 			}
 		}
 	}

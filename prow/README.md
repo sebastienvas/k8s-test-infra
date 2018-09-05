@@ -24,6 +24,7 @@ not make any attempt to preserve backwards compatibility.
 * `cmd/tide` manages merging PRs once they pass tests and match other
   criteria. See [its README](./cmd/tide/README.md) for more
   information.
+* `cmd/checkconfig` loads and verifies the configuration, useful as a pre-submit
 
 See also: [Life of a Prow Job](./architecture.md)
 
@@ -238,4 +239,5 @@ for them.
 
 ### KubeCon 2018 EU
 [Automation and the Kubernetes Contributor Experience](https://www.youtube.com/watch?v=BsIC7gPkH5M)
+
 [SIG Testing Deep Dive](https://www.youtube.com/watch?v=M32NIHRKaOI)
