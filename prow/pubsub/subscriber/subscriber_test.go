@@ -228,8 +228,8 @@ func TestPushServer_ServeHTTP(t *testing.T) {
 			expectedCode: http.StatusForbidden,
 		},
 		{
-			name:   "NoToken",
-			url:    "https://prow.k8s.io/push",
+			name: "NoToken",
+			url:  "https://prow.k8s.io/push",
 			pushRequest: pushRequest{
 				Message: message{
 					ID: "runid",
@@ -271,8 +271,8 @@ func TestPushServer_ServeHTTP(t *testing.T) {
 			expectedCode: http.StatusOK,
 		},
 		{
-			name:   "SuccessNoToken",
-			url:    "https://prow.k8s.io/push",
+			name: "SuccessNoToken",
+			url:  "https://prow.k8s.io/push",
 			pushRequest: pushRequest{
 				Message: message{
 					ID: "fakeID",
