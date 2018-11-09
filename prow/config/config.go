@@ -107,7 +107,7 @@ type ProwConfig struct {
 	OwnersDirBlacklist OwnersDirBlacklist `json:"owners_dir_blacklist,omitempty"`
 
 	// Pub/Sub Subscriptions that we want to listen to
-	PubsubSubscriptions PubsubSubscriptions `json:"pubsub_subscription"`
+	PubsubSubscriptions PubsubSubscriptions `json:"pubsub_subscription,omitempty"`
 }
 
 // OwnersDirBlacklist is used to configure which directories to ignore when

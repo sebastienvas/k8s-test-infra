@@ -20,8 +20,10 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/pubsub"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
+
 	"k8s.io/test-infra/prow/config"
 	"k8s.io/test-infra/prow/kube"
 	"k8s.io/test-infra/prow/pjutil"
@@ -45,8 +47,7 @@ type kubeClient interface {
 type Subscriber struct {
 	ConfigAgent *config.Agent
 	Metrics     *Metrics
-	logEntry    *logrus.Entry
-	kc          kubeClient
+	KubeClient  kubeClient
 }
 
 func extractFromAttribute(attrs map[string]string, key string) (string, error) {
@@ -73,11 +74,11 @@ func extractPubsubMessage(msg *pubsub.Message) (*reporter.PubsubMessage, error) 
 }
 
 func (s *Subscriber) handleMessage(msg *pubsub.Message, subscription string) error {
-	l := s.logEntry.WithFields(logrus.Fields{
+	l := logrus.WithFields(logrus.Fields{
 		"pubsub-subscription": subscription,
 		"pubsub-id":           msg.ID})
 	s.Metrics.MessageCounter.With(prometheus.Labels{subscriptionLabel: subscription}).Inc()
-	s.logEntry.Info("Received message")
+	l.Info("Received message")
 	eType, err := extractFromAttribute(msg.Attributes, prowEventType)
 	if err != nil {
 		l.WithError(err).Error("failed to read message")
@@ -123,6 +124,6 @@ func (s *Subscriber) handlePeriodicJob(l *logrus.Entry, msg *pubsub.Message, sub
 		// Add annotations
 		prowJob = pjutil.NewProwJobWithAnnotation(prowJobSpec, nil, r.GetAnnotations())
 	}
-	_, err = s.kc.CreateProwJob(prowJob)
+	_, err = s.KubeClient.CreateProwJob(prowJob)
 	return err
 }

@@ -20,11 +20,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"net/http"
-
-	"github.com/prometheus/client_golang/prometheus"
+	"reflect"
+	"time"
 
 	"cloud.google.com/go/pubsub"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/test-infra/prow/config"
 )
@@ -47,15 +49,17 @@ type pushRequest struct {
 
 // PushServer implements http.Handler. It validates incoming Pub/Sub subscriptions handle them.
 type PushServer struct {
-	Subscriber Subscriber
-	PushSecret string
+	Subscriber     *Subscriber
+	TokenGenerator func() []byte
 }
 
 // PullServer listen to Pull Pub/Sub subscriptions and handle them.
 type PullServer struct {
-	Subscriber             Subscriber
-	Subscriptions          config.PubsubSubscriptions
+	Subscriber *Subscriber
+
 	MaxOutstandingMessages int
+
+	ConfigCheckTick *time.Ticker
 }
 
 // ServeHTTP validates an incoming Push Pub/Sub subscription and handle them.
@@ -74,9 +78,9 @@ func (s *PushServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	if s.PushSecret != "" {
+	if s.TokenGenerator != nil {
 		token := r.URL.Query().Get(tokenLabel)
-		if token != s.PushSecret {
+		if token != string(s.TokenGenerator()) {
 			finalError = fmt.Errorf("wrong token")
 			HTTPCode = http.StatusForbidden
 			return
@@ -103,34 +107,80 @@ func (s *PushServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HandlePulls pull for Pub/Sub subscriptions and handle them.
-func (s *PullServer) HandlePulls(ctx context.Context) error {
-	errGroup, derivedCtx := errgroup.WithContext(ctx)
-	for project, subscriptions := range s.Subscriptions {
+// handlePulls pull for Pub/Sub subscriptions and handle them.
+func (s *PullServer) handlePulls(ctx context.Context, projectSubscriptions config.PubsubSubscriptions) (*errgroup.Group, context.Context, context.CancelFunc, error) {
+	// Since config might change we need be able to cancel the current run
+	newCtx, cancel := context.WithCancel(ctx)
+	errGroup, derivedCtx := errgroup.WithContext(newCtx)
+	for project, subscriptions := range projectSubscriptions {
 		client, err := pubsub.NewClient(ctx, project)
 		if err != nil {
-			return err
+			return errGroup, derivedCtx, cancel, err
 		}
 		for _, subName := range subscriptions {
 			sub := client.Subscription(subName)
 			if s.MaxOutstandingMessages > 0 {
 				sub.ReceiveSettings.MaxOutstandingMessages = s.MaxOutstandingMessages
 			}
-			f := func() error {
+			errGroup.Go(func() error {
+				logrus.Infof("Listening for subscription %s on project %s", sub.String(), project)
+				defer logrus.Warnf("Stopped Listening for subscription %s on project %s", sub.String(), project)
 				err := sub.Receive(derivedCtx, func(ctx context.Context, msg *pubsub.Message) {
-					if err = s.Subscriber.handleMessage(msg, subName); err != nil {
+					if err = s.Subscriber.handleMessage(msg, sub.String()); err != nil {
 						msg.Nack()
+						s.Subscriber.Metrics.ACKMessageCounter.With(prometheus.Labels{subscriptionLabel: sub.String()}).Inc()
 					} else {
 						msg.Ack()
+						s.Subscriber.Metrics.NACKMessageCounter.With(prometheus.Labels{subscriptionLabel: sub.String()}).Inc()
 					}
 				})
 				if err != nil {
 					return err
 				}
 				return nil
-			}
-			errGroup.Go(f)
+			})
 		}
 	}
-	return errGroup.Wait()
+	return errGroup, derivedCtx, cancel, nil
+}
+
+// Run will block listening to all subscriptions and return once the context is cancelled
+// or one of the subscription has a unrecoverable error.
+func (s *PullServer) Run(ctx context.Context) error {
+	currentConfig := s.Subscriber.ConfigAgent.Config().PubsubSubscriptions
+	errGroup, derivedCtx, cancel, err := s.handlePulls(ctx, currentConfig)
+	if err != nil {
+		logrus.WithError(err).Warn("Pull server shutting down")
+		return err
+	}
+
+	for {
+		select {
+		// Parent context. Shutdown
+		case <-ctx.Done():
+			logrus.WithError(ctx.Err()).Warn("Pull server shutting down")
+			return ctx.Err()
+		// Current thread context, it may be failing already
+		case <-derivedCtx.Done():
+			logrus.WithError(derivedCtx.Err()).Warn("Pull server shutting down")
+			return derivedCtx.Err()
+		// Checking for update config
+		case <-s.ConfigCheckTick.C:
+			newConfig := s.Subscriber.ConfigAgent.Config().PubsubSubscriptions
+			logrus.Info("Checking for new config")
+			if !reflect.DeepEqual(newConfig, currentConfig) {
+				logrus.Warn("New config found, reloading pull Server")
+				cancel()
+				// Making sure the current thread finishes before starting a new one.
+				errGroup.Wait()
+				// Starting a new thread with new config
+				errGroup, derivedCtx, cancel, err = s.handlePulls(ctx, newConfig)
+				if err != nil {
+					logrus.WithError(err).Warn("Pull server shutting down")
+					return err
+				}
+				currentConfig = newConfig
+			}
+		}
+	}
 }

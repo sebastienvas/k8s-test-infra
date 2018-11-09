@@ -27,6 +27,8 @@ const (
 
 var (
 	// Define all metrics for pubsub subscriptions here.
+
+	// Common
 	messageCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "prow_pubsub_message_counter",
 		Help: "A counter of the webhooks made to prow.",
@@ -35,6 +37,18 @@ var (
 		Name: "prow_pubsub_error_counter",
 		Help: "A counter of the webhooks made to prow.",
 	}, []string{subscriptionLabel})
+
+	// Pull Server
+	ackedMessagesCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "prow_pubsub_ack_counter",
+		Help: "A counter for message acked made to prow.",
+	}, []string{subscriptionLabel})
+	nackedMessagesCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "prow_pubsub_nack_counter",
+		Help: "A counter for message nacked made to prow.",
+	}, []string{subscriptionLabel})
+
+	// Push Server
 	responseCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "prow_pubsub_response_codes",
 		Help: "A counter of the different responses server has responded to Push Events with.",
@@ -48,15 +62,24 @@ func init() {
 }
 
 type Metrics struct {
-	MessageCounter  *prometheus.CounterVec
+	// Common
+	MessageCounter *prometheus.CounterVec
+	ErrorCounter   *prometheus.CounterVec
+
+	// Pull Server
+	ACKMessageCounter  *prometheus.CounterVec
+	NACKMessageCounter *prometheus.CounterVec
+
+	// Push Server
 	ResponseCounter *prometheus.CounterVec
-	ErrorCounter    *prometheus.CounterVec
 }
 
 func NewMetrics() *Metrics {
 	return &Metrics{
-		MessageCounter:  messageCounter,
-		ResponseCounter: responseCounter,
-		ErrorCounter:    errorCounter,
+		MessageCounter:     messageCounter,
+		ResponseCounter:    responseCounter,
+		ErrorCounter:       errorCounter,
+		ACKMessageCounter:  ackedMessagesCounter,
+		NACKMessageCounter: nackedMessagesCounter,
 	}
 }

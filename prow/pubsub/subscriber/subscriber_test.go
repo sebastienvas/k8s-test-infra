@@ -18,10 +18,13 @@ package subscriber
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/sirupsen/logrus"
@@ -88,8 +91,7 @@ func TestHandleMessage(t *testing.T) {
 			ca.Set(tc.config)
 			s := Subscriber{
 				Metrics:     NewMetrics(),
-				kc:          kc,
-				logEntry:    logrus.NewEntry(logrus.New()),
+				KubeClient:  kc,
 				ConfigAgent: ca,
 			}
 			if err := s.handleMessage(tc.msg, tc.s); err != nil {
@@ -182,8 +184,7 @@ func TestHandlePeriodicJob(t *testing.T) {
 			ca.Set(tc.config)
 			s := Subscriber{
 				Metrics:     NewMetrics(),
-				kc:          kc,
-				logEntry:    logrus.NewEntry(logrus.New()),
+				KubeClient:  kc,
 				ConfigAgent: ca,
 			}
 			if err := s.handlePeriodicJob(logrus.NewEntry(logrus.New()), tc.msg, tc.s); err != nil {
@@ -202,11 +203,10 @@ func TestHandlePeriodicJob(t *testing.T) {
 func TestPushServer_ServeHTTP(t *testing.T) {
 	kc := &kubeTestClient{}
 	pushServer := PushServer{
-		Subscriber: Subscriber{
+		Subscriber: &Subscriber{
 			ConfigAgent: &config.Agent{},
 			Metrics:     NewMetrics(),
-			logEntry:    logrus.NewEntry(logrus.New()),
-			kc:          kc,
+			KubeClient:  kc,
 		},
 	}
 	for _, tc := range []struct {
@@ -286,7 +286,7 @@ func TestPushServer_ServeHTTP(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t1 *testing.T) {
-			config := &config.Config{
+			c := &config.Config{
 				JobConfig: config.JobConfig{
 					Periodics: []config.Periodic{
 						{
@@ -297,8 +297,8 @@ func TestPushServer_ServeHTTP(t *testing.T) {
 					},
 				},
 			}
-			pushServer.Subscriber.ConfigAgent.Set(config)
-			pushServer.PushSecret = tc.secret
+			pushServer.Subscriber.ConfigAgent.Set(c)
+			pushServer.TokenGenerator = func() []byte { return []byte(tc.secret) }
 			kc.pj = nil
 
 			body := new(bytes.Buffer)
@@ -314,5 +314,124 @@ func TestPushServer_ServeHTTP(t *testing.T) {
 				t1.Errorf("exected code %d got %d", tc.expectedCode, resp.StatusCode)
 			}
 		})
+	}
+}
+
+func TestPullServer_RunShutdown(t *testing.T) {
+	kc := &kubeTestClient{}
+	s := &Subscriber{
+		ConfigAgent: &config.Agent{},
+		KubeClient:  kc,
+		Metrics:     NewMetrics(),
+	}
+	c := &config.Config{}
+	s.ConfigAgent.Set(c)
+	pullServer := PullServer{
+		Subscriber:             s,
+		ConfigCheckTick:        time.NewTicker(time.Millisecond),
+		MaxOutstandingMessages: 1,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	errChan := make(chan error)
+	go func() {
+		errChan <- pullServer.Run(ctx)
+	}()
+	cancel()
+	select {
+	case err := <-errChan:
+		// Should fail since Pub/Sub cred are not set
+		if strings.HasPrefix(err.Error(), "context canceled") {
+			return
+		} else {
+			t.Errorf("unexpected error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Error("Timeout")
+	}
+}
+
+func TestPullServer_RunHandlePullFail(t *testing.T) {
+	kc := &kubeTestClient{}
+	s := &Subscriber{
+		ConfigAgent: &config.Agent{},
+		KubeClient:  kc,
+		Metrics:     NewMetrics(),
+	}
+	c := &config.Config{
+		ProwConfig: config.ProwConfig{
+			PubsubSubscriptions: map[string][]string{
+				"project": {"test"},
+			},
+		},
+	}
+	s.ConfigAgent.Set(c)
+	pullServer := PullServer{
+		Subscriber:             s,
+		ConfigCheckTick:        time.NewTicker(time.Millisecond),
+		MaxOutstandingMessages: 1,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	errChan := make(chan error)
+	defer cancel()
+	go func() {
+		errChan <- pullServer.Run(ctx)
+	}()
+	select {
+	case err := <-errChan:
+		// Should fail since Pub/Sub cred are not set
+		if strings.HasPrefix(err.Error(), "pubsub") {
+			return
+		} else {
+			t.Errorf("unexpected error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Error("Timeout")
+	}
+}
+
+func TestPullServer_RunConfigChange(t *testing.T) {
+	kc := &kubeTestClient{}
+	s := &Subscriber{
+		ConfigAgent: &config.Agent{},
+		KubeClient:  kc,
+		Metrics:     NewMetrics(),
+	}
+	c := &config.Config{}
+	s.ConfigAgent.Set(c)
+	pullServer := PullServer{
+		Subscriber:             s,
+		ConfigCheckTick:        time.NewTicker(time.Millisecond),
+		MaxOutstandingMessages: 1,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errChan := make(chan error)
+	go func() {
+		errChan <- pullServer.Run(ctx)
+	}()
+	select {
+	case <-errChan:
+		t.Error("should not fail")
+	case <-time.After(time.Second):
+		newConfig := &config.Config{
+			ProwConfig: config.ProwConfig{
+				PubsubSubscriptions: map[string][]string{
+					"project": {"test"},
+				},
+			},
+		}
+		s.ConfigAgent.Set(newConfig)
+		select {
+		case err := <-errChan:
+			// Should fail since Pub/Sub cred are not set
+			if strings.HasPrefix(err.Error(), "pubsub") {
+				return
+			} else {
+				t.Errorf("unexpected error: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Error("Timeout")
+
+		}
 	}
 }
