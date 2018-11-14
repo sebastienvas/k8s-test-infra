@@ -20,10 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/sirupsen/logrus"
 	"net/http"
 	"reflect"
 	"time"
+
+	"github.com/sirupsen/logrus"
 
 	"cloud.google.com/go/pubsub"
 	"github.com/prometheus/client_golang/prometheus"
@@ -57,9 +58,9 @@ type PushServer struct {
 type PullServer struct {
 	Subscriber *Subscriber
 
-	MaxOutstandingMessages int
-
 	ConfigCheckTick *time.Ticker
+
+	Client pubsubClientInterface
 }
 
 // ServeHTTP validates an incoming Push Pub/Sub subscription and handle them.
@@ -100,10 +101,52 @@ func (s *PushServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Attributes: pr.Message.Attributes,
 	}
 
-	if err := s.Subscriber.handleMessage(msg, pr.Subscription); err != nil {
+	if err := s.Subscriber.handleMessage(&pubSubMessage{msg: msg}, pr.Subscription); err != nil {
 		finalError = err
 		HTTPCode = http.StatusNotModified
 		return
+	}
+}
+
+// For testing
+type subscriptionInterface interface {
+	String() string
+	Receive(ctx context.Context, f func(context.Context, messageInterface)) error
+}
+
+type pubsubClientInterface interface {
+	New(ctx context.Context, project string) (pubsubClientInterface, error)
+	Subscription(id string) subscriptionInterface
+}
+
+type PubSubClient struct {
+	client *pubsub.Client
+}
+
+type pubsubSubscription struct {
+	sub *pubsub.Subscription
+}
+
+func (s *pubsubSubscription) String() string {
+	return s.String()
+}
+
+func (s *pubsubSubscription) Receive(ctx context.Context, f func(context.Context, messageInterface)) error {
+	return s.Receive(ctx, f)
+}
+
+func (c *PubSubClient) New(ctx context.Context, project string) (pubsubClientInterface, error) {
+	client, err := pubsub.NewClient(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+	c.client = client
+	return c, nil
+}
+
+func (c *PubSubClient) Subscription(id string) subscriptionInterface {
+	return &pubsubSubscription{
+		sub: c.client.Subscription(id),
 	}
 }
 
@@ -113,20 +156,18 @@ func (s *PullServer) handlePulls(ctx context.Context, projectSubscriptions confi
 	newCtx, cancel := context.WithCancel(ctx)
 	errGroup, derivedCtx := errgroup.WithContext(newCtx)
 	for project, subscriptions := range projectSubscriptions {
-		client, err := pubsub.NewClient(ctx, project)
+		client, err := s.Client.New(ctx, project)
 		if err != nil {
 			return errGroup, derivedCtx, cancel, err
 		}
 		for _, subName := range subscriptions {
 			sub := client.Subscription(subName)
-			if s.MaxOutstandingMessages > 0 {
-				sub.ReceiveSettings.MaxOutstandingMessages = s.MaxOutstandingMessages
-			}
 			errGroup.Go(func() error {
 				logrus.Infof("Listening for subscription %s on project %s", sub.String(), project)
 				defer logrus.Warnf("Stopped Listening for subscription %s on project %s", sub.String(), project)
-				err := sub.Receive(derivedCtx, func(ctx context.Context, msg *pubsub.Message) {
+				err := sub.Receive(derivedCtx, func(ctx context.Context, msg messageInterface) {
 					if err = s.Subscriber.handleMessage(msg, sub.String()); err != nil {
+						fmt.Print(msg)
 						msg.Nack()
 						s.Subscriber.Metrics.ACKMessageCounter.With(prometheus.Labels{subscriptionLabel: sub.String()}).Inc()
 					} else {

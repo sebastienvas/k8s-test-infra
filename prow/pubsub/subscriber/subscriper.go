@@ -50,6 +50,33 @@ type Subscriber struct {
 	KubeClient  kubeClient
 }
 
+type messageInterface interface {
+	GetAttributes() map[string]string
+	GetID() string
+	Ack()
+	Nack()
+}
+
+type pubSubMessage struct {
+	msg *pubsub.Message
+}
+
+func (m *pubSubMessage) GetAttributes() map[string]string {
+	return m.msg.Attributes
+}
+
+func (m *pubSubMessage) GetID() string {
+	return m.msg.ID
+}
+
+func (m *pubSubMessage) Ack() {
+	m.msg.Ack()
+}
+
+func (m *pubSubMessage) Nack() {
+	m.msg.Nack()
+}
+
 func extractFromAttribute(attrs map[string]string, key string) (string, error) {
 	value, ok := attrs[key]
 	if !ok {
@@ -58,28 +85,28 @@ func extractFromAttribute(attrs map[string]string, key string) (string, error) {
 	return value, nil
 }
 
-func extractPubsubMessage(msg *pubsub.Message) (*reporter.PubsubMessage, error) {
+func extractPubsubMessage(attributes map[string]string) (*reporter.PubsubMessage, error) {
 	var err error
 	m := reporter.PubsubMessage{}
-	if m.Topic, err = extractFromAttribute(msg.Attributes, reporter.PubsubTopicLabel); err != nil {
+	if m.Topic, err = extractFromAttribute(attributes, reporter.PubsubTopicLabel); err != nil {
 		return nil, err
 	}
-	if m.Project, err = extractFromAttribute(msg.Attributes, reporter.PubsubProjectLabel); err != nil {
+	if m.Project, err = extractFromAttribute(attributes, reporter.PubsubProjectLabel); err != nil {
 		return nil, err
 	}
-	if m.RunID, err = extractFromAttribute(msg.Attributes, reporter.PubsubRunIDLabel); err != nil {
+	if m.RunID, err = extractFromAttribute(attributes, reporter.PubsubRunIDLabel); err != nil {
 		return nil, err
 	}
 	return &m, nil
 }
 
-func (s *Subscriber) handleMessage(msg *pubsub.Message, subscription string) error {
+func (s *Subscriber) handleMessage(msg messageInterface, subscription string) error {
 	l := logrus.WithFields(logrus.Fields{
 		"pubsub-subscription": subscription,
-		"pubsub-id":           msg.ID})
+		"pubsub-id":           msg.GetID()})
 	s.Metrics.MessageCounter.With(prometheus.Labels{subscriptionLabel: subscription}).Inc()
 	l.Info("Received message")
-	eType, err := extractFromAttribute(msg.Attributes, prowEventType)
+	eType, err := extractFromAttribute(msg.GetAttributes(), prowEventType)
 	if err != nil {
 		l.WithError(err).Error("failed to read message")
 		s.Metrics.ErrorCounter.With(prometheus.Labels{subscriptionLabel: subscription})
@@ -100,8 +127,8 @@ func (s *Subscriber) handleMessage(msg *pubsub.Message, subscription string) err
 	return err
 }
 
-func (s *Subscriber) handlePeriodicJob(l *logrus.Entry, msg *pubsub.Message, subscription string) error {
-	name, err := extractFromAttribute(msg.Attributes, prowJobName)
+func (s *Subscriber) handlePeriodicJob(l *logrus.Entry, msg messageInterface, subscription string) error {
+	name, err := extractFromAttribute(msg.GetAttributes(), prowJobName)
 	if err != nil {
 		return err
 	}
@@ -117,7 +144,7 @@ func (s *Subscriber) handlePeriodicJob(l *logrus.Entry, msg *pubsub.Message, sub
 	}
 	prowJobSpec := pjutil.PeriodicSpec(*periodicJob)
 	var prowJob kube.ProwJob
-	if r, err := extractPubsubMessage(msg); err != nil {
+	if r, err := extractPubsubMessage(msg.GetAttributes()); err != nil {
 		l.Warning("no pubsub information found to publish to")
 		prowJob = pjutil.NewProwJob(prowJobSpec, nil)
 	} else {

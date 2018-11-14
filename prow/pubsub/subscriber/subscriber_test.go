@@ -37,6 +37,60 @@ type kubeTestClient struct {
 	pj *kube.ProwJob
 }
 
+type pubsubTestClient struct {
+	messageChan chan fakeMessage
+}
+
+type fakeSubscription struct {
+	name        string
+	messageChan chan fakeMessage
+}
+
+type fakeMessage struct {
+	attributes map[string]string
+	id         string
+}
+
+func (m *fakeMessage) GetAttributes() map[string]string {
+	return m.attributes
+}
+
+func (m *fakeMessage) GetID() string {
+	return m.id
+}
+
+func (m *fakeMessage) Ack()  {}
+func (m *fakeMessage) Nack() {}
+
+func (s *fakeSubscription) String() string {
+	return s.name
+}
+
+func (s *fakeSubscription) Receive(ctx context.Context, f func(context.Context, messageInterface)) error {
+	derivedCtx, cancel := context.WithCancel(ctx)
+	msg := <-s.messageChan
+	go func() {
+		f(derivedCtx, &msg)
+		cancel()
+	}()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-derivedCtx.Done():
+			return derivedCtx.Err()
+		}
+	}
+}
+
+func (c *pubsubTestClient) New(ctx context.Context, project string) (pubsubClientInterface, error) {
+	return c, nil
+}
+
+func (c *pubsubTestClient) Subscription(id string) subscriptionInterface {
+	return &fakeSubscription{name: id, messageChan: c.messageChan}
+}
+
 func (c *kubeTestClient) CreateProwJob(job kube.ProwJob) (kube.ProwJob, error) {
 	c.pj = &job
 	return job, nil
@@ -94,7 +148,7 @@ func TestHandleMessage(t *testing.T) {
 				KubeClient:  kc,
 				ConfigAgent: ca,
 			}
-			if err := s.handleMessage(tc.msg, tc.s); err != nil {
+			if err := s.handleMessage(&pubSubMessage{tc.msg}, tc.s); err != nil {
 				if err.Error() != tc.err {
 					t1.Errorf("Expected error %v got %v", tc.err, err.Error())
 				} else if tc.err == "" {
@@ -187,7 +241,7 @@ func TestHandlePeriodicJob(t *testing.T) {
 				KubeClient:  kc,
 				ConfigAgent: ca,
 			}
-			if err := s.handlePeriodicJob(logrus.NewEntry(logrus.New()), tc.msg, tc.s); err != nil {
+			if err := s.handlePeriodicJob(logrus.NewEntry(logrus.New()), &pubSubMessage{tc.msg}, tc.s); err != nil {
 				if err.Error() != tc.err {
 					t1.Errorf("Expected error %v got %v", tc.err, err.Error())
 				} else if tc.err == "" {
@@ -327,26 +381,20 @@ func TestPullServer_RunShutdown(t *testing.T) {
 	c := &config.Config{}
 	s.ConfigAgent.Set(c)
 	pullServer := PullServer{
-		Subscriber:             s,
-		ConfigCheckTick:        time.NewTicker(time.Millisecond),
-		MaxOutstandingMessages: 1,
+		Subscriber:      s,
+		ConfigCheckTick: time.NewTicker(time.Millisecond),
+		Client:          &pubsubTestClient{},
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	errChan := make(chan error)
 	go func() {
 		errChan <- pullServer.Run(ctx)
 	}()
 	cancel()
-	select {
-	case err := <-errChan:
-		// Should fail since Pub/Sub cred are not set
-		if strings.HasPrefix(err.Error(), "context canceled") {
-			return
-		} else {
-			t.Errorf("unexpected error: %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Error("Timeout")
+	err := <-errChan
+	// Should fail since Pub/Sub cred are not set
+	if !strings.HasPrefix(err.Error(), "context canceled") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 
@@ -364,28 +412,27 @@ func TestPullServer_RunHandlePullFail(t *testing.T) {
 			},
 		},
 	}
+	messageChan := make(chan fakeMessage, 1)
 	s.ConfigAgent.Set(c)
 	pullServer := PullServer{
-		Subscriber:             s,
-		ConfigCheckTick:        time.NewTicker(time.Millisecond),
-		MaxOutstandingMessages: 1,
+		Subscriber:      s,
+		ConfigCheckTick: time.NewTicker(100 * time.Millisecond),
+		Client:          &pubsubTestClient{messageChan: messageChan},
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	errChan := make(chan error)
+	messageChan <- fakeMessage{
+		attributes: map[string]string{},
+		id:         "test",
+	}
 	defer cancel()
 	go func() {
 		errChan <- pullServer.Run(ctx)
 	}()
-	select {
-	case err := <-errChan:
-		// Should fail since Pub/Sub cred are not set
-		if strings.HasPrefix(err.Error(), "pubsub") {
-			return
-		} else {
-			t.Errorf("unexpected error: %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Error("Timeout")
+	err := <-errChan
+	// Should fail since Pub/Sub cred are not set
+	if !strings.HasPrefix(err.Error(), "context canceled") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 
@@ -397,13 +444,14 @@ func TestPullServer_RunConfigChange(t *testing.T) {
 		Metrics:     NewMetrics(),
 	}
 	c := &config.Config{}
+	messageChan := make(chan fakeMessage, 1)
 	s.ConfigAgent.Set(c)
 	pullServer := PullServer{
-		Subscriber:             s,
-		ConfigCheckTick:        time.NewTicker(time.Millisecond),
-		MaxOutstandingMessages: 1,
+		Subscriber:      s,
+		ConfigCheckTick: time.NewTicker(50 * time.Millisecond),
+		Client:          &pubsubTestClient{messageChan: messageChan},
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	errChan := make(chan error)
 	go func() {
@@ -412,7 +460,7 @@ func TestPullServer_RunConfigChange(t *testing.T) {
 	select {
 	case <-errChan:
 		t.Error("should not fail")
-	case <-time.After(time.Second):
+	case <-time.After(100 * time.Millisecond):
 		newConfig := &config.Config{
 			ProwConfig: config.ProwConfig{
 				PubsubSubscriptions: map[string][]string{
@@ -421,17 +469,13 @@ func TestPullServer_RunConfigChange(t *testing.T) {
 			},
 		}
 		s.ConfigAgent.Set(newConfig)
-		select {
-		case err := <-errChan:
-			// Should fail since Pub/Sub cred are not set
-			if strings.HasPrefix(err.Error(), "pubsub") {
-				return
-			} else {
-				t.Errorf("unexpected error: %v", err)
-			}
-		case <-time.After(time.Second):
-			t.Error("Timeout")
-
+		messageChan <- fakeMessage{
+			attributes: map[string]string{},
+			id:         "test",
+		}
+		err := <-errChan
+		if !strings.HasPrefix(err.Error(), "context canceled") {
+			t.Errorf("unexpected error: %v", err)
 		}
 	}
 }
