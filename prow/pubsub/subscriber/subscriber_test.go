@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -78,7 +79,7 @@ func (s *fakeSubscription) Receive(ctx context.Context, f func(context.Context, 
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-derivedCtx.Done():
-			return derivedCtx.Err()
+			return fmt.Errorf("message processed")
 		}
 	}
 }

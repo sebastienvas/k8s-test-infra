@@ -151,14 +151,13 @@ func (c *PubSubClient) Subscription(id string) subscriptionInterface {
 }
 
 // handlePulls pull for Pub/Sub subscriptions and handle them.
-func (s *PullServer) handlePulls(ctx context.Context, projectSubscriptions config.PubsubSubscriptions) (*errgroup.Group, context.Context, context.CancelFunc, error) {
+func (s *PullServer) handlePulls(ctx context.Context, projectSubscriptions config.PubsubSubscriptions) (*errgroup.Group, context.Context, error) {
 	// Since config might change we need be able to cancel the current run
-	newCtx, cancel := context.WithCancel(ctx)
-	errGroup, derivedCtx := errgroup.WithContext(newCtx)
+	errGroup, derivedCtx := errgroup.WithContext(ctx)
 	for project, subscriptions := range projectSubscriptions {
 		client, err := s.Client.New(ctx, project)
 		if err != nil {
-			return errGroup, derivedCtx, cancel, err
+			return errGroup, derivedCtx, err
 		}
 		for _, subName := range subscriptions {
 			sub := client.Subscription(subName)
@@ -182,14 +181,14 @@ func (s *PullServer) handlePulls(ctx context.Context, projectSubscriptions confi
 			})
 		}
 	}
-	return errGroup, derivedCtx, cancel, nil
+	return errGroup, derivedCtx, nil
 }
 
 // Run will block listening to all subscriptions and return once the context is cancelled
 // or one of the subscription has a unrecoverable error.
 func (s *PullServer) Run(ctx context.Context) error {
 	currentConfig := s.Subscriber.ConfigAgent.Config().PubsubSubscriptions
-	errGroup, derivedCtx, cancel, err := s.handlePulls(ctx, currentConfig)
+	errGroup, derivedCtx, err := s.handlePulls(ctx, currentConfig)
 	if err != nil {
 		logrus.WithError(err).Warn("Pull server shutting down")
 		return err
@@ -211,11 +210,10 @@ func (s *PullServer) Run(ctx context.Context) error {
 			logrus.Info("Checking for new config")
 			if !reflect.DeepEqual(newConfig, currentConfig) {
 				logrus.Warn("New config found, reloading pull Server")
-				cancel()
 				// Making sure the current thread finishes before starting a new one.
 				errGroup.Wait()
 				// Starting a new thread with new config
-				errGroup, derivedCtx, cancel, err = s.handlePulls(ctx, newConfig)
+				errGroup, derivedCtx, err = s.handlePulls(ctx, newConfig)
 				if err != nil {
 					logrus.WithError(err).Warn("Pull server shutting down")
 					return err
