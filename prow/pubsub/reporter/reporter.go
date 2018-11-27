@@ -29,18 +29,30 @@ import (
 )
 
 const (
-	pubsubProjectLabel = "prow.k8s.io/pubsub-project"
-	pubsubTopicLabel   = "prow.k8s.io/pubsub-topic"
-	pubsubRunIDLabel   = "prow.k8s.io/pubsub-runID"
+	PubsubProjectLabel = "prow.k8s.io/pubsub-project"
+	PubsubTopicLabel   = "prow.k8s.io/pubsub-topic"
+	PubsubRunIDLabel   = "prow.k8s.io/pubsub-runID"
 )
 
 // ReportMessage is a message structure used to pass a prowjob status to Pub/Sub topic.s
+type PubsubMessage struct {
+	Project string `json:"project"`
+	Topic   string `json:"topic"`
+	RunID   string `json:"runid"`
+}
+
+func (p *PubsubMessage) GetAnnotations() map[string]string {
+	return map[string]string{
+		PubsubProjectLabel: p.Project,
+		PubsubTopicLabel:   p.Topic,
+		PubsubRunIDLabel:   p.RunID,
+	}
+}
+
 type ReportMessage struct {
-	Project string            `json:"project"`
-	Topic   string            `json:"topic"`
-	RunID   string            `json:"runid"`
-	Status  kube.ProwJobState `json:"status"`
-	URL     string            `json:"url"`
+	PubsubMessage
+	Status kube.ProwJobState `json:"status"`
+	URL    string            `json:"url"`
 }
 
 // Client is a reporter client fed to crier controller
@@ -63,7 +75,7 @@ func (c *Client) GetName() string {
 
 // ShouldReport tells if a prowjob should be reported by this reporter
 func (c *Client) ShouldReport(pj *kube.ProwJob) bool {
-	return pj.Labels[pubsubProjectLabel] != "" && pj.Labels[pubsubTopicLabel] != ""
+	return pj.Labels[PubsubProjectLabel] != "" && pj.Labels[PubsubTopicLabel] != ""
 }
 
 // Report takes a prowjob, and generate a pubsub ReportMessage and publish to specific Pub/Sub topic
@@ -97,16 +109,18 @@ func (c *Client) Report(pj *kube.ProwJob) error {
 }
 
 func generateMessageFromPJ(pj *kube.ProwJob) *ReportMessage {
-	projectName := pj.Labels[pubsubProjectLabel]
-	topicName := pj.Labels[pubsubTopicLabel]
-	runID := pj.GetLabels()[pubsubRunIDLabel]
+	projectName := pj.Labels[PubsubProjectLabel]
+	topicName := pj.Labels[PubsubTopicLabel]
+	runID := pj.GetLabels()[PubsubRunIDLabel]
 
 	psReport := &ReportMessage{
-		Project: projectName,
-		Topic:   topicName,
-		RunID:   runID,
-		Status:  pj.Status.State,
-		URL:     pj.Status.URL,
+		PubsubMessage: PubsubMessage{
+			Project: projectName,
+			Topic:   topicName,
+			RunID:   runID,
+		},
+		Status: pj.Status.State,
+		URL:    pj.Status.URL,
 	}
 
 	return psReport
