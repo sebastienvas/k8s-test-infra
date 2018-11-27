@@ -38,7 +38,7 @@ type kubeTestClient struct {
 	pj *kube.ProwJob
 }
 
-type pubsubTestClient struct {
+type pubSubTestClient struct {
 	messageChan chan fakeMessage
 }
 
@@ -84,11 +84,11 @@ func (s *fakeSubscription) Receive(ctx context.Context, f func(context.Context, 
 	}
 }
 
-func (c *pubsubTestClient) New(ctx context.Context, project string) (pubsubClientInterface, error) {
+func (c *pubSubTestClient) New(ctx context.Context, project string) (pubsubClientInterface, error) {
 	return c, nil
 }
 
-func (c *pubsubTestClient) Subscription(id string) subscriptionInterface {
+func (c *pubSubTestClient) Subscription(id string) subscriptionInterface {
 	return &fakeSubscription{name: id, messageChan: c.messageChan}
 }
 
@@ -137,7 +137,7 @@ func TestHandleMessage(t *testing.T) {
 			},
 			config: &config.Config{},
 			err:    "unsupported event type",
-			labels: []string{reporter.PubsubTopicLabel, reporter.PubsubRunIDLabel, reporter.PubsubProjectLabel},
+			labels: []string{reporter.PubSubTopicLabel, reporter.PubSubRunIDLabel, reporter.PubSubProjectLabel},
 		},
 	} {
 		t.Run(tc.name, func(t1 *testing.T) {
@@ -203,9 +203,9 @@ func TestHandlePeriodicJob(t *testing.T) {
 				Attributes: map[string]string{
 					prowEventType:               periodicProwJob,
 					prowJobName:                 "test",
-					reporter.PubsubProjectLabel: "project",
-					reporter.PubsubRunIDLabel:   "runid",
-					reporter.PubsubTopicLabel:   "topic",
+					reporter.PubSubProjectLabel: "project",
+					reporter.PubSubRunIDLabel:   "runid",
+					reporter.PubSubTopicLabel:   "topic",
 				},
 			},
 			config: &config.Config{
@@ -384,7 +384,7 @@ func TestPullServer_RunShutdown(t *testing.T) {
 	pullServer := PullServer{
 		Subscriber:      s,
 		ConfigCheckTick: time.NewTicker(time.Millisecond),
-		Client:          &pubsubTestClient{},
+		Client:          &pubSubTestClient{},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	errChan := make(chan error)
@@ -410,7 +410,7 @@ func TestPullServer_RunHandlePullFail(t *testing.T) {
 	}
 	c := &config.Config{
 		ProwConfig: config.ProwConfig{
-			PubsubSubscriptions: map[string][]string{
+			PubSubSubscriptions: map[string][]string{
 				"project": {"test"},
 			},
 		},
@@ -420,7 +420,7 @@ func TestPullServer_RunHandlePullFail(t *testing.T) {
 	pullServer := PullServer{
 		Subscriber:      s,
 		ConfigCheckTick: time.NewTicker(100 * time.Millisecond),
-		Client:          &pubsubTestClient{messageChan: messageChan},
+		Client:          &pubSubTestClient{messageChan: messageChan},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	errChan := make(chan error)
@@ -452,7 +452,7 @@ func TestPullServer_RunConfigChange(t *testing.T) {
 	pullServer := PullServer{
 		Subscriber:      s,
 		ConfigCheckTick: time.NewTicker(50 * time.Millisecond),
-		Client:          &pubsubTestClient{messageChan: messageChan},
+		Client:          &pubSubTestClient{messageChan: messageChan},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -466,7 +466,7 @@ func TestPullServer_RunConfigChange(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 		newConfig := &config.Config{
 			ProwConfig: config.ProwConfig{
-				PubsubSubscriptions: map[string][]string{
+				PubSubSubscriptions: map[string][]string{
 					"project": {"test"},
 				},
 			},

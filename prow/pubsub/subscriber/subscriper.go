@@ -100,16 +100,16 @@ func extractFromAttribute(attrs map[string]string, key string) (string, error) {
 	return value, nil
 }
 
-func extractPubsubMessage(attributes map[string]string) (*reporter.PubsubMessage, error) {
+func extractPubSubMessage(attributes map[string]string) (*reporter.PubSubMessage, error) {
 	var err error
-	m := reporter.PubsubMessage{}
-	if m.Topic, err = extractFromAttribute(attributes, reporter.PubsubTopicLabel); err != nil {
+	m := reporter.PubSubMessage{}
+	if m.Topic, err = extractFromAttribute(attributes, reporter.PubSubTopicLabel); err != nil {
 		return nil, err
 	}
-	if m.Project, err = extractFromAttribute(attributes, reporter.PubsubProjectLabel); err != nil {
+	if m.Project, err = extractFromAttribute(attributes, reporter.PubSubProjectLabel); err != nil {
 		return nil, err
 	}
-	if m.RunID, err = extractFromAttribute(attributes, reporter.PubsubRunIDLabel); err != nil {
+	if m.RunID, err = extractFromAttribute(attributes, reporter.PubSubRunIDLabel); err != nil {
 		return nil, err
 	}
 	return &m, nil
@@ -160,7 +160,7 @@ func (s *Subscriber) handlePeriodicJob(l *logrus.Entry, msg messageInterface, su
 	}
 	prowJobSpec := pjutil.PeriodicSpec(*periodicJob)
 	var prowJob kube.ProwJob
-	if r, err := extractPubsubMessage(msg.GetAttributes()); err != nil {
+	if r, err := extractPubSubMessage(msg.GetAttributes()); err != nil {
 		l.Warning("no pubsub information found to publish to")
 		prowJob = pjutil.NewProwJob(prowJobSpec, nil)
 	} else {

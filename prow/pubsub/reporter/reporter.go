@@ -29,28 +29,28 @@ import (
 )
 
 const (
-	PubsubProjectLabel = "prow.k8s.io/pubsub-project"
-	PubsubTopicLabel   = "prow.k8s.io/pubsub-topic"
-	PubsubRunIDLabel   = "prow.k8s.io/pubsub-runID"
+	PubSubProjectLabel = "prow.k8s.io/pubsub-project"
+	PubSubTopicLabel   = "prow.k8s.io/pubsub-topic"
+	PubSubRunIDLabel   = "prow.k8s.io/pubsub-runID"
 )
 
 // ReportMessage is a message structure used to pass a prowjob status to Pub/Sub topic.s
-type PubsubMessage struct {
+type PubSubMessage struct {
 	Project string `json:"project"`
 	Topic   string `json:"topic"`
 	RunID   string `json:"runid"`
 }
 
-func (p *PubsubMessage) GetAnnotations() map[string]string {
+func (p *PubSubMessage) GetAnnotations() map[string]string {
 	return map[string]string{
-		PubsubProjectLabel: p.Project,
-		PubsubTopicLabel:   p.Topic,
-		PubsubRunIDLabel:   p.RunID,
+		PubSubProjectLabel: p.Project,
+		PubSubTopicLabel:   p.Topic,
+		PubSubRunIDLabel:   p.RunID,
 	}
 }
 
 type ReportMessage struct {
-	PubsubMessage
+	PubSubMessage
 	Status kube.ProwJobState `json:"status"`
 	URL    string            `json:"url"`
 }
@@ -75,7 +75,7 @@ func (c *Client) GetName() string {
 
 // ShouldReport tells if a prowjob should be reported by this reporter
 func (c *Client) ShouldReport(pj *kube.ProwJob) bool {
-	return pj.Labels[PubsubProjectLabel] != "" && pj.Labels[PubsubTopicLabel] != ""
+	return pj.Labels[PubSubProjectLabel] != "" && pj.Labels[PubSubTopicLabel] != ""
 }
 
 // Report takes a prowjob, and generate a pubsub ReportMessage and publish to specific Pub/Sub topic
@@ -109,12 +109,12 @@ func (c *Client) Report(pj *kube.ProwJob) error {
 }
 
 func generateMessageFromPJ(pj *kube.ProwJob) *ReportMessage {
-	projectName := pj.Labels[PubsubProjectLabel]
-	topicName := pj.Labels[PubsubTopicLabel]
-	runID := pj.GetLabels()[PubsubRunIDLabel]
+	projectName := pj.Labels[PubSubProjectLabel]
+	topicName := pj.Labels[PubSubTopicLabel]
+	runID := pj.GetLabels()[PubSubRunIDLabel]
 
 	psReport := &ReportMessage{
-		PubsubMessage: PubsubMessage{
+		PubSubMessage: PubSubMessage{
 			Project: projectName,
 			Topic:   topicName,
 			RunID:   runID,

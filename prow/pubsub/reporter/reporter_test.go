@@ -43,9 +43,9 @@ func TestGenerateMessageFromPJ(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test1",
 					Labels: map[string]string{
-						PubsubProjectLabel: testPubSubProjectName,
-						PubsubTopicLabel:   testPubSubTopicName,
-						PubsubRunIDLabel:   testPubSubRunID,
+						PubSubProjectLabel: testPubSubProjectName,
+						PubSubTopicLabel:   testPubSubTopicName,
+						PubSubRunIDLabel:   testPubSubRunID,
 					},
 				},
 				Status: kube.ProwJobStatus{
@@ -54,7 +54,7 @@ func TestGenerateMessageFromPJ(t *testing.T) {
 				},
 			},
 			expectedMessage: &ReportMessage{
-				PubsubMessage: PubsubMessage{
+				PubSubMessage: PubSubMessage{
 					Project: testPubSubProjectName,
 					Topic:   testPubSubTopicName,
 					RunID:   testPubSubRunID,
@@ -69,8 +69,8 @@ func TestGenerateMessageFromPJ(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-no-runID",
 					Labels: map[string]string{
-						PubsubProjectLabel: testPubSubProjectName,
-						PubsubTopicLabel:   testPubSubTopicName,
+						PubSubProjectLabel: testPubSubProjectName,
+						PubSubTopicLabel:   testPubSubTopicName,
 					},
 				},
 				Status: kube.ProwJobStatus{
@@ -78,7 +78,7 @@ func TestGenerateMessageFromPJ(t *testing.T) {
 				},
 			},
 			expectedMessage: &ReportMessage{
-				PubsubMessage: PubsubMessage{
+				PubSubMessage: PubSubMessage{
 					Project: testPubSubProjectName,
 					Topic:   testPubSubTopicName,
 					RunID:   "",
@@ -110,9 +110,9 @@ func TestShouldReport(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test1",
 					Labels: map[string]string{
-						PubsubProjectLabel: testPubSubProjectName,
-						PubsubTopicLabel:   testPubSubTopicName,
-						PubsubRunIDLabel:   testPubSubRunID,
+						PubSubProjectLabel: testPubSubProjectName,
+						PubSubTopicLabel:   testPubSubTopicName,
+						PubSubRunIDLabel:   testPubSubRunID,
 					},
 				},
 				Status: kube.ProwJobStatus{
@@ -127,8 +127,8 @@ func TestShouldReport(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-no-project",
 					Labels: map[string]string{
-						PubsubTopicLabel: testPubSubTopicName,
-						PubsubRunIDLabel: testPubSubRunID,
+						PubSubTopicLabel: testPubSubTopicName,
+						PubSubRunIDLabel: testPubSubRunID,
 					},
 				},
 				Status: kube.ProwJobStatus{
@@ -143,8 +143,8 @@ func TestShouldReport(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-no-topic",
 					Labels: map[string]string{
-						PubsubProjectLabel: testPubSubProjectName,
-						PubsubRunIDLabel:   testPubSubRunID,
+						PubSubProjectLabel: testPubSubProjectName,
+						PubSubRunIDLabel:   testPubSubRunID,
 					},
 				},
 				Status: kube.ProwJobStatus{

@@ -123,15 +123,15 @@ type PubSubClient struct {
 	client *pubsub.Client
 }
 
-type pubsubSubscription struct {
+type pubSubSubscription struct {
 	sub *pubsub.Subscription
 }
 
-func (s *pubsubSubscription) String() string {
+func (s *pubSubSubscription) String() string {
 	return s.sub.String()
 }
 
-func (s *pubsubSubscription) Receive(ctx context.Context, f func(context.Context, messageInterface)) error {
+func (s *pubSubSubscription) Receive(ctx context.Context, f func(context.Context, messageInterface)) error {
 	g := func(ctx2 context.Context, msg2 *pubsub.Message) {
 		f(ctx2, &pubSubMessage{msg: msg2})
 	}
@@ -148,7 +148,7 @@ func (c *PubSubClient) New(ctx context.Context, project string) (pubsubClientInt
 }
 
 func (c *PubSubClient) Subscription(id string) subscriptionInterface {
-	return &pubsubSubscription{
+	return &pubSubSubscription{
 		sub: c.client.Subscription(id),
 	}
 }
@@ -176,6 +176,7 @@ func (s *PullServer) handlePulls(ctx context.Context, projectSubscriptions confi
 					msg.Ack()
 				})
 				if err != nil {
+					logrus.WithError(err).Errorf("failed to listen for subscription %s on project %s", sub.String(), project)
 					return err
 				}
 				return nil
@@ -195,7 +196,7 @@ func (s *PullServer) Run(ctx context.Context) error {
 		}
 		logrus.Warn("Pull server shutting down")
 	}()
-	currentConfig := s.Subscriber.ConfigAgent.Config().PubsubSubscriptions
+	currentConfig := s.Subscriber.ConfigAgent.Config().PubSubSubscriptions
 	errGroup, derivedCtx, err := s.handlePulls(ctx, currentConfig)
 	if err != nil {
 		return err
@@ -212,7 +213,7 @@ func (s *PullServer) Run(ctx context.Context) error {
 			return err
 		// Checking for update config
 		case <-s.ConfigCheckTick.C:
-			newConfig := s.Subscriber.ConfigAgent.Config().PubsubSubscriptions
+			newConfig := s.Subscriber.ConfigAgent.Config().PubSubSubscriptions
 			logrus.Info("Checking for new config")
 			if !reflect.DeepEqual(newConfig, currentConfig) {
 				logrus.Warn("New config found, reloading pull Server")
