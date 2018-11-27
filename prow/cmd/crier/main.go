@@ -25,8 +25,6 @@ import (
 	"syscall"
 	"time"
 
-	"k8s.io/test-infra/prow/kube"
-
 	"github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
 	"k8s.io/client-go/util/workqueue"
@@ -48,8 +46,7 @@ const (
 )
 
 type options struct {
-	masterURL      string
-	kubeConfig     string
+	client         prowflagutil.KubernetesClientOptions
 	cookiefilePath string
 	gerritProjects gerritclient.ProjectsFlag
 	github         prowflagutil.GitHubOptions
@@ -96,8 +93,6 @@ func (o *options) validate() error {
 }
 
 func (o *options) parseArgs(fs *flag.FlagSet, args []string) error {
-	fs.StringVar(&o.masterURL, "masterurl", "", "URL to k8s master")
-	fs.StringVar(&o.kubeConfig, "kubeconfig", "", "Cluster config for the cluster you want to connect to")
 	fs.StringVar(&o.cookiefilePath, "cookiefile", "", "Path to git http.cookiefile, leave empty for anonymous")
 	fs.Var(&o.gerritProjects, "gerrit-projects", "Set of gerrit repos to monitor on a host example: --gerrit-host=https://android.googlesource.com=platform/build,toolchain/llvm, repeat flag for each host")
 	fs.IntVar(&o.gerritWorkers, "gerrit-workers", 0, "Number of gerrit report workers (0 means disabled)")
@@ -111,6 +106,7 @@ func (o *options) parseArgs(fs *flag.FlagSet, args []string) error {
 	fs.BoolVar(&o.dryrun, "dry-run", false, "Run in dry-run mode, not doing actual report (effective for github only)")
 
 	o.github.AddFlags(fs)
+	o.client.AddFlags(fs)
 
 	fs.Parse(args)
 
@@ -136,7 +132,10 @@ func main() {
 		logrusutil.NewDefaultFieldsFormatter(nil, logrus.Fields{"component": "crier"}),
 	)
 
-	_, prowjobClient := kube.GetKubernetesClient(o.masterURL, o.kubeConfig)
+	prowjobClient, err := o.client.ProwJobClient()
+	if err != nil {
+		logrus.WithError(err).Fatal("unable to create prow job client")
+	}
 
 	prowjobInformerFactory := prowjobinformer.NewSharedInformerFactory(prowjobClient, resync)
 
@@ -147,7 +146,7 @@ func main() {
 			&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(10), 100)},
 		))
 
-	controllers := []*crier.Controller{}
+	var controllers []*crier.Controller
 
 	// track all worker status before shutdown
 	wg := &sync.WaitGroup{}

@@ -27,17 +27,16 @@ import (
 	"syscall"
 	"time"
 
-	"k8s.io/test-infra/prow/kube"
-
 	"golang.org/x/sync/errgroup"
-	"k8s.io/test-infra/prow/pubsub/subscriber"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 
 	"k8s.io/test-infra/prow/config"
+	"k8s.io/test-infra/prow/flagutil"
 	"k8s.io/test-infra/prow/logrusutil"
 	"k8s.io/test-infra/prow/metrics"
+	"k8s.io/test-infra/prow/pubsub/subscriber"
 )
 
 var (
@@ -45,9 +44,7 @@ var (
 )
 
 type options struct {
-	masterURL  string
-	kubeConfig string
-
+	client         flagutil.KubernetesClientOptions
 	port           int
 	push           bool
 	pushSecretFile string
@@ -63,18 +60,19 @@ type options struct {
 func init() {
 	flagOptions = &options{}
 	fs := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	fs.StringVar(&flagOptions.masterURL, "masterurl", "", "URL to k8s master")
-	fs.StringVar(&flagOptions.kubeConfig, "kubeconfig", "", "Cluster config for the cluster you want to connect to")
 
 	fs.IntVar(&flagOptions.port, "port", 80, "HTTP Port.")
 	fs.BoolVar(&flagOptions.push, "push", false, "Using Push Server.")
 	fs.StringVar(&flagOptions.pushSecretFile, "push-secret-file", "", "Path to Pub/Sub Push secret file.")
 
-	fs.StringVar(&flagOptions.configPath, "config-path", "../../config.yaml", "Path to config.yaml.")
-	fs.StringVar(&flagOptions.jobConfigPath, "job-config-path", "../../../config/jobs", "Path to prow job configs.")
+	fs.StringVar(&flagOptions.configPath, "config-path", "/etc/config/config.yaml", "Path to config.yaml.")
+	fs.StringVar(&flagOptions.jobConfigPath, "job-config-path", "", "Path to prow job configs.")
 
 	fs.BoolVar(&flagOptions.dryRun, "dry-run", true, "Dry run for testing. Uses API tokens but does not mutate.")
 	fs.DurationVar(&flagOptions.gracePeriod, "grace-period", 180*time.Second, "On shutdown, try to handle remaining events for the specified duration. ")
+
+	flagOptions.client.AddFlags(fs)
+
 	fs.Parse(os.Args[1:])
 }
 
@@ -87,7 +85,6 @@ func main() {
 		logrus.WithError(err).Fatal("Error starting config agent.")
 	}
 
-	// Append the path of hmac and github secrets.
 	var tokenGenerator func() []byte
 	if flagOptions.pushSecretFile != "" {
 		var tokens []string
@@ -100,7 +97,10 @@ func main() {
 		tokenGenerator = secretAgent.GetTokenGenerator(flagOptions.pushSecretFile)
 	}
 
-	_, prowjobClient := kube.GetKubernetesClient(flagOptions.masterURL, flagOptions.kubeConfig)
+	prowjobClient, err := flagOptions.client.ProwJobClient()
+	if err != nil {
+		logrus.WithError(err).Fatal("unable to create prow job client")
+	}
 	kubeClient := &subscriber.KubeClient{
 		Client:    prowjobClient,
 		Namespace: configAgent.Config().ProwJobNamespace,
@@ -167,7 +167,7 @@ func main() {
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM, syscall.SIGABRT)
-	var err error
+
 	select {
 	case <-shutdownCtx.Done():
 		err = shutdownCtx.Err()

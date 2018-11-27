@@ -26,6 +26,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	prowjobclientset "k8s.io/test-infra/prow/client/clientset/versioned"
+
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
 // loadClusterConfig loads connection configuration
@@ -52,23 +54,35 @@ func loadClusterConfig(masterURL, kubeConfig string) (*rest.Config, error) {
 
 // GetKubernetesClient retrieves the Kubernetes cluster
 // client from within the cluster
-func GetKubernetesClient(masterURL, kubeConfig string) (kubernetes.Interface, prowjobclientset.Interface) {
+func GetKubernetesClient(masterURL, kubeConfig string) (kubernetes.Interface, error) {
 	config, err := loadClusterConfig(masterURL, kubeConfig)
 	if err != nil {
-		logrus.Fatalf("failed to load cluster config: %v", err)
+		return nil, err
 	}
 
 	// generate the client based off of the config
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		logrus.Fatalf("getClusterConfig: %v", err)
+		return nil, err
+	}
+
+	logrus.Info("Successfully constructed k8s client")
+	return client, nil
+}
+
+// GetKubernetesClient retrieves the Kubernetes cluster
+// client from within the cluster
+func GetProwJobClient(masterURL, kubeConfig string) (prowjobclientset.Interface, error) {
+	config, err := loadClusterConfig(masterURL, kubeConfig)
+	if err != nil {
+		return nil, err
 	}
 
 	prowjobClient, err := prowjobclientset.NewForConfig(config)
 	if err != nil {
-		logrus.Fatalf("getClusterConfig: %v", err)
+		return nil, err
 	}
 
 	logrus.Info("Successfully constructed k8s client")
-	return client, prowjobClient
+	return prowjobClient, nil
 }
