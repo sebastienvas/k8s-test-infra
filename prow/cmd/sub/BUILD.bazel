@@ -14,7 +14,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//prow/config:go_default_library",
-        "//prow/kube:go_default_library",
+        "//prow/flagutil:go_default_library",
         "//prow/logrusutil:go_default_library",
         "//prow/metrics:go_default_library",
         "//prow/pubsub/subscriber:go_default_library",
