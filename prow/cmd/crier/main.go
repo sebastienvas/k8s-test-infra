@@ -19,21 +19,18 @@ package main
 import (
 	"errors"
 	"flag"
-	"fmt"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
 
+	"k8s.io/test-infra/prow/kube"
+
 	"github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
 
-	prowjobclientset "k8s.io/test-infra/prow/client/clientset/versioned"
 	prowjobinformer "k8s.io/test-infra/prow/client/informers/externalversions"
 
 	"k8s.io/test-infra/prow/config"
@@ -132,53 +129,6 @@ func parseOptions() options {
 	return o
 }
 
-// TODO(krzyzacy): copy & paste, refactor this
-// loadClusterConfig loads connection configuration
-// for the cluster we're deploying to. We prefer to
-// use in-cluster configuration if possible, but will
-// fall back to using default rules otherwise.
-func loadClusterConfig(masterURL, kubeConfig string) (*rest.Config, error) {
-	clusterConfig, err := clientcmd.BuildConfigFromFlags(masterURL, kubeConfig)
-	if err == nil {
-		return clusterConfig, nil
-	}
-
-	credentials, err := clientcmd.NewDefaultClientConfigLoadingRules().Load()
-	if err != nil {
-		return nil, fmt.Errorf("could not load credentials from config: %v", err)
-	}
-
-	clusterConfig, err = clientcmd.NewDefaultClientConfig(*credentials, &clientcmd.ConfigOverrides{}).ClientConfig()
-	if err != nil {
-		return nil, fmt.Errorf("could not load client configuration: %v", err)
-	}
-	return clusterConfig, nil
-}
-
-// TODO(krzyzacy): move this to kube???
-// getKubernetesClient retrieves the Kubernetes cluster
-// client from within the cluster
-func getKubernetesClient(masterURL, kubeConfig string) (kubernetes.Interface, prowjobclientset.Interface) {
-	config, err := loadClusterConfig(masterURL, kubeConfig)
-	if err != nil {
-		logrus.Fatalf("failed to load cluster config: %v", err)
-	}
-
-	// generate the client based off of the config
-	client, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		logrus.Fatalf("getClusterConfig: %v", err)
-	}
-
-	prowjobClient, err := prowjobclientset.NewForConfig(config)
-	if err != nil {
-		logrus.Fatalf("getClusterConfig: %v", err)
-	}
-
-	logrus.Info("Successfully constructed k8s client")
-	return client, prowjobClient
-}
-
 func main() {
 	o := parseOptions()
 
@@ -186,7 +136,7 @@ func main() {
 		logrusutil.NewDefaultFieldsFormatter(nil, logrus.Fields{"component": "crier"}),
 	)
 
-	_, prowjobClient := getKubernetesClient(o.masterURL, o.kubeConfig)
+	_, prowjobClient := kube.GetKubernetesClient(o.masterURL, o.kubeConfig)
 
 	prowjobInformerFactory := prowjobinformer.NewSharedInformerFactory(prowjobClient, resync)
 
