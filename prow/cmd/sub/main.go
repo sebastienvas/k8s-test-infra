@@ -141,9 +141,8 @@ func main() {
 		logrus.Info("Setting up Pull Server")
 		// Using Pull Server
 		pullServer := subscriber.PullServer{
-			Subscriber:      s,
-			ConfigCheckTick: time.NewTicker(time.Minute),
-			Client:          &subscriber.PubSubClient{},
+			Subscriber: s,
+			Client:     &subscriber.PubSubClient{},
 		}
 		errGroup.Go(func() error {
 			wg.Add(1)

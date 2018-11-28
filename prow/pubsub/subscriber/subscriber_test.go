@@ -382,9 +382,8 @@ func TestPullServer_RunShutdown(t *testing.T) {
 	c := &config.Config{}
 	s.ConfigAgent.Set(c)
 	pullServer := PullServer{
-		Subscriber:      s,
-		ConfigCheckTick: time.NewTicker(time.Millisecond),
-		Client:          &pubSubTestClient{},
+		Subscriber: s,
+		Client:     &pubSubTestClient{},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	errChan := make(chan error)
@@ -418,9 +417,8 @@ func TestPullServer_RunHandlePullFail(t *testing.T) {
 	messageChan := make(chan fakeMessage, 1)
 	s.ConfigAgent.Set(c)
 	pullServer := PullServer{
-		Subscriber:      s,
-		ConfigCheckTick: time.NewTicker(100 * time.Millisecond),
-		Client:          &pubSubTestClient{messageChan: messageChan},
+		Subscriber: s,
+		Client:     &pubSubTestClient{messageChan: messageChan},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	errChan := make(chan error)
@@ -450,9 +448,8 @@ func TestPullServer_RunConfigChange(t *testing.T) {
 	messageChan := make(chan fakeMessage, 1)
 	s.ConfigAgent.Set(c)
 	pullServer := PullServer{
-		Subscriber:      s,
-		ConfigCheckTick: time.NewTicker(50 * time.Millisecond),
-		Client:          &pubSubTestClient{messageChan: messageChan},
+		Subscriber: s,
+		Client:     &pubSubTestClient{messageChan: messageChan},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -463,7 +460,7 @@ func TestPullServer_RunConfigChange(t *testing.T) {
 	select {
 	case <-errChan:
 		t.Error("should not fail")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(10 * time.Millisecond):
 		newConfig := &config.Config{
 			ProwConfig: config.ProwConfig{
 				PubSubSubscriptions: map[string][]string{

@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"time"
 
 	"github.com/sirupsen/logrus"
 
@@ -57,8 +56,6 @@ type PushServer struct {
 // PullServer listen to Pull Pub/Sub subscriptions and handle them.
 type PullServer struct {
 	Subscriber *Subscriber
-
-	ConfigCheckTick *time.Ticker
 
 	Client pubsubClientInterface
 }
@@ -189,6 +186,9 @@ func (s *PullServer) handlePulls(ctx context.Context, projectSubscriptions confi
 // Run will block listening to all subscriptions and return once the context is cancelled
 // or one of the subscription has a unrecoverable error.
 func (s *PullServer) Run(ctx context.Context) error {
+	configEvent := make(chan config.ConfigDelta, 2)
+	s.Subscriber.ConfigAgent.Subscribe(configEvent)
+
 	var err error
 	defer func() {
 		if err != nil {
@@ -212,10 +212,10 @@ func (s *PullServer) Run(ctx context.Context) error {
 			err = errGroup.Wait()
 			return err
 		// Checking for update config
-		case <-s.ConfigCheckTick.C:
-			newConfig := s.Subscriber.ConfigAgent.Config().PubSubSubscriptions
-			logrus.Info("Checking for new config")
-			if !reflect.DeepEqual(newConfig, currentConfig) {
+		case event := <-configEvent:
+			newConfig := event.After.PubSubSubscriptions
+			logrus.Info("Received new config")
+			if !reflect.DeepEqual(currentConfig, newConfig) {
 				logrus.Warn("New config found, reloading pull Server")
 				// Making sure the current thread finishes before starting a new one.
 				errGroup.Wait()
