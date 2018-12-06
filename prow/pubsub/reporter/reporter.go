@@ -29,28 +29,19 @@ import (
 )
 
 const (
-	PubSubProjectLabel = "prow.k8s.io/pubsub-project"
-	PubSubTopicLabel   = "prow.k8s.io/pubsub-topic"
-	PubSubRunIDLabel   = "prow.k8s.io/pubsub-runID"
+	// PubSubProjectLabel annotation
+	PubSubProjectLabel = "prow.k8s.io/pubsub.project"
+	// PubSubTopicLabel annotation
+	PubSubTopicLabel = "prow.k8s.io/pubsub.topic"
+	// PubSubRunIDLabel annotation
+	PubSubRunIDLabel = "prow.k8s.io/pubsub.runID"
 )
 
 // ReportMessage is a message structure used to pass a prowjob status to Pub/Sub topic.s
-type PubSubMessage struct {
+type ReportMessage struct {
 	Project string `json:"project"`
 	Topic   string `json:"topic"`
 	RunID   string `json:"runid"`
-}
-
-func (p *PubSubMessage) GetAnnotations() map[string]string {
-	return map[string]string{
-		PubSubProjectLabel: p.Project,
-		PubSubTopicLabel:   p.Topic,
-		PubSubRunIDLabel:   p.RunID,
-	}
-}
-
-type ReportMessage struct {
-	PubSubMessage
 	Status kube.ProwJobState `json:"status"`
 	URL    string            `json:"url"`
 }
@@ -114,11 +105,9 @@ func generateMessageFromPJ(pj *kube.ProwJob) *ReportMessage {
 	runID := pj.GetLabels()[PubSubRunIDLabel]
 
 	psReport := &ReportMessage{
-		PubSubMessage: PubSubMessage{
-			Project: projectName,
-			Topic:   topicName,
-			RunID:   runID,
-		},
+		Project: projectName,
+		Topic:   topicName,
+		RunID:   runID,
 		Status: pj.Status.State,
 		URL:    pj.Status.URL,
 	}

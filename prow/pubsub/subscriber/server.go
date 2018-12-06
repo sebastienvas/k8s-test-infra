@@ -60,6 +60,14 @@ type PullServer struct {
 	Client pubsubClientInterface
 }
 
+// NewPullServer creates a new PullServer
+func NewPullServer(s *Subscriber) *PullServer {
+	return &PullServer{
+		Subscriber: s,
+		Client:     &PubSubClient{},
+	}
+}
+
 // ServeHTTP validates an incoming Push Pub/Sub subscription and handle them.
 func (s *PushServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	HTTPCode := http.StatusOK
@@ -92,13 +100,13 @@ func (s *PushServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg := &pubsub.Message{
+	msg := pubsub.Message{
 		Data:       pr.Message.Data,
 		ID:         pr.Message.ID,
 		Attributes: pr.Message.Attributes,
 	}
 
-	if err := s.Subscriber.handleMessage(&pubSubMessage{msg: msg}, pr.Subscription); err != nil {
+	if err := s.Subscriber.handleMessage(&pubSubMessage{Message: msg}, pr.Subscription); err != nil {
 		finalError = err
 		HTTPCode = http.StatusNotModified
 		return
@@ -107,15 +115,17 @@ func (s *PushServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // For testing
 type subscriptionInterface interface {
-	String() string
-	Receive(ctx context.Context, f func(context.Context, messageInterface)) error
+	string() string
+	receive(ctx context.Context, f func(context.Context, messageInterface)) error
 }
 
+// pubsubClientInterface interfaces with Cloud Pub/Sub client for testing reason
 type pubsubClientInterface interface {
-	New(ctx context.Context, project string) (pubsubClientInterface, error)
-	Subscription(id string) subscriptionInterface
+	new(ctx context.Context, project string) (pubsubClientInterface, error)
+	subscription(id string) subscriptionInterface
 }
 
+// PubSubClient is used to interface with a new Cloud Pub/Sub Client
 type PubSubClient struct {
 	client *pubsub.Client
 }
@@ -124,18 +134,19 @@ type pubSubSubscription struct {
 	sub *pubsub.Subscription
 }
 
-func (s *pubSubSubscription) String() string {
+func (s *pubSubSubscription) string() string {
 	return s.sub.String()
 }
 
-func (s *pubSubSubscription) Receive(ctx context.Context, f func(context.Context, messageInterface)) error {
+func (s *pubSubSubscription) receive(ctx context.Context, f func(context.Context, messageInterface)) error {
 	g := func(ctx2 context.Context, msg2 *pubsub.Message) {
-		f(ctx2, &pubSubMessage{msg: msg2})
+		f(ctx2, &pubSubMessage{Message: *msg2})
 	}
 	return s.sub.Receive(ctx, g)
 }
 
-func (c *PubSubClient) New(ctx context.Context, project string) (pubsubClientInterface, error) {
+// New creates new Cloud Pub/Sub Client
+func (c *PubSubClient) new(ctx context.Context, project string) (pubsubClientInterface, error) {
 	client, err := pubsub.NewClient(ctx, project)
 	if err != nil {
 		return nil, err
@@ -144,7 +155,8 @@ func (c *PubSubClient) New(ctx context.Context, project string) (pubsubClientInt
 	return c, nil
 }
 
-func (c *PubSubClient) Subscription(id string) subscriptionInterface {
+// Subscription creates a subscription from the Cloud Pub/Sub Client
+func (c *PubSubClient) subscription(id string) subscriptionInterface {
 	return &pubSubSubscription{
 		sub: c.client.Subscription(id),
 	}
@@ -155,25 +167,25 @@ func (s *PullServer) handlePulls(ctx context.Context, projectSubscriptions confi
 	// Since config might change we need be able to cancel the current run
 	errGroup, derivedCtx := errgroup.WithContext(ctx)
 	for project, subscriptions := range projectSubscriptions {
-		client, err := s.Client.New(ctx, project)
+		client, err := s.Client.new(ctx, project)
 		if err != nil {
 			return errGroup, derivedCtx, err
 		}
 		for _, subName := range subscriptions {
-			sub := client.Subscription(subName)
+			sub := client.subscription(subName)
 			errGroup.Go(func() error {
-				logrus.Infof("Listening for subscription %s on project %s", sub.String(), project)
-				defer logrus.Warnf("Stopped Listening for subscription %s on project %s", sub.String(), project)
-				err := sub.Receive(derivedCtx, func(ctx context.Context, msg messageInterface) {
-					if err = s.Subscriber.handleMessage(msg, sub.String()); err != nil {
-						s.Subscriber.Metrics.ACKMessageCounter.With(prometheus.Labels{subscriptionLabel: sub.String()}).Inc()
+				logrus.Infof("Listening for subscription %s on project %s", sub.string(), project)
+				defer logrus.Warnf("Stopped Listening for subscription %s on project %s", sub.string(), project)
+				err := sub.receive(derivedCtx, func(ctx context.Context, msg messageInterface) {
+					if err = s.Subscriber.handleMessage(msg, sub.string()); err != nil {
+						s.Subscriber.Metrics.ACKMessageCounter.With(prometheus.Labels{subscriptionLabel: sub.string()}).Inc()
 					} else {
-						s.Subscriber.Metrics.NACKMessageCounter.With(prometheus.Labels{subscriptionLabel: sub.String()}).Inc()
+						s.Subscriber.Metrics.NACKMessageCounter.With(prometheus.Labels{subscriptionLabel: sub.string()}).Inc()
 					}
-					msg.Ack()
+					msg.ack()
 				})
 				if err != nil {
-					logrus.WithError(err).Errorf("failed to listen for subscription %s on project %s", sub.String(), project)
+					logrus.WithError(err).Errorf("failed to listen for subscription %s on project %s", sub.string(), project)
 					return err
 				}
 				return nil

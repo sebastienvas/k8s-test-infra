@@ -17,9 +17,8 @@ limitations under the License.
 package subscriber
 
 import (
+	"encoding/json"
 	"fmt"
-
-	"k8s.io/test-infra/prow/client/clientset/versioned"
 
 	"cloud.google.com/go/pubsub"
 
@@ -29,67 +28,87 @@ import (
 	"k8s.io/test-infra/prow/config"
 	"k8s.io/test-infra/prow/kube"
 	"k8s.io/test-infra/prow/pjutil"
-	"k8s.io/test-infra/prow/pubsub/reporter"
 )
 
 const (
-	prowEventType   = "ProwEventType"
-	periodicProwJob = "ProwPeriodicProwJob"
-	prowJobName     = "ProwJobName"
+	prowEventType        = "prow.k8s.io/pubsub.EventType"
+	periodicProwJobEvent = "prow.k8s.io/pubsub.PeriodicProwJobEvent"
 )
 
-// kubeClientInterface mostly for testing.
-type kubeClientInterface interface {
-	CreateProwJob(job *kube.ProwJob) (*kube.ProwJob, error)
+// PeriodicProwJobEvent contains the minimum information required to start a ProwJob.
+type PeriodicProwJobEvent struct {
+	Name        string            `json:"name"`
+	Type        string            `json:"type"`
+	Envs        map[string]string `json:"envs,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
-type KubeClient struct {
-	Client    versioned.Interface
-	Namespace string
-	DryRun    bool
-}
-
-func (c *KubeClient) CreateProwJob(job *kube.ProwJob) (*kube.ProwJob, error) {
-	if c.DryRun {
-		return job, nil
+// FromPayload set the PeriodicProwJobEvent from the PubSub message payload.
+func (pe *PeriodicProwJobEvent) FromPayload(data []byte) error {
+	if err := json.Unmarshal(data, pe); err != nil {
+		return err
 	}
-	return c.Client.ProwV1().ProwJobs(c.Namespace).Create(job)
+	return nil
+}
+
+// ToMessage generates a PubSub Message from a PeriodicProwJobEvent.
+func (pe *PeriodicProwJobEvent) ToMessage() (*pubsub.Message, error) {
+	data, err := json.Marshal(pe)
+	if err != nil {
+		return nil, err
+	}
+	message := pubsub.Message{
+		Data: data,
+		Attributes: map[string]string{
+			prowEventType: periodicProwJobEvent,
+		},
+	}
+	return &message, nil
+}
+
+// KubeClientInterface mostly for testing.
+type KubeClientInterface interface {
+	CreateProwJob(job *kube.ProwJob) (*kube.ProwJob, error)
 }
 
 // Subscriber handles Pub/Sub subscriptions, update metrics,
 // validates them using Prow Configuration and
-// use a kubeClientInterface to create Prow Jobs.
+// use a KubeClientInterface to create Prow Jobs.
 type Subscriber struct {
 	ConfigAgent *config.Agent
 	Metrics     *Metrics
-	KubeClient  kubeClientInterface
+	KubeClient  KubeClientInterface
 }
 
 type messageInterface interface {
-	GetAttributes() map[string]string
-	GetID() string
-	Ack()
-	Nack()
+	getAttributes() map[string]string
+	getPayload() []byte
+	getID() string
+	ack()
+	nack()
 }
 
 type pubSubMessage struct {
-	msg *pubsub.Message
+	pubsub.Message
 }
 
-func (m *pubSubMessage) GetAttributes() map[string]string {
-	return m.msg.Attributes
+func (m *pubSubMessage) getAttributes() map[string]string {
+	return m.Attributes
 }
 
-func (m *pubSubMessage) GetID() string {
-	return m.msg.ID
+func (m *pubSubMessage) getPayload() []byte {
+	return m.Data
 }
 
-func (m *pubSubMessage) Ack() {
-	m.msg.Ack()
+func (m *pubSubMessage) getID() string {
+	return m.ID
 }
 
-func (m *pubSubMessage) Nack() {
-	m.msg.Nack()
+func (m *pubSubMessage) ack() {
+	m.Message.Ack()
+}
+func (m *pubSubMessage) nack() {
+	m.Message.Nack()
 }
 
 func extractFromAttribute(attrs map[string]string, key string) (string, error) {
@@ -100,35 +119,20 @@ func extractFromAttribute(attrs map[string]string, key string) (string, error) {
 	return value, nil
 }
 
-func extractPubSubMessage(attributes map[string]string) (*reporter.PubSubMessage, error) {
-	var err error
-	m := reporter.PubSubMessage{}
-	if m.Topic, err = extractFromAttribute(attributes, reporter.PubSubTopicLabel); err != nil {
-		return nil, err
-	}
-	if m.Project, err = extractFromAttribute(attributes, reporter.PubSubProjectLabel); err != nil {
-		return nil, err
-	}
-	if m.RunID, err = extractFromAttribute(attributes, reporter.PubSubRunIDLabel); err != nil {
-		return nil, err
-	}
-	return &m, nil
-}
-
 func (s *Subscriber) handleMessage(msg messageInterface, subscription string) error {
 	l := logrus.WithFields(logrus.Fields{
 		"pubsub-subscription": subscription,
-		"pubsub-id":           msg.GetID()})
+		"pubsub-id":           msg.getID()})
 	s.Metrics.MessageCounter.With(prometheus.Labels{subscriptionLabel: subscription}).Inc()
 	l.Info("Received message")
-	eType, err := extractFromAttribute(msg.GetAttributes(), prowEventType)
+	eType, err := extractFromAttribute(msg.getAttributes(), prowEventType)
 	if err != nil {
 		l.WithError(err).Error("failed to read message")
 		s.Metrics.ErrorCounter.With(prometheus.Labels{subscriptionLabel: subscription})
 		return err
 	}
 	switch eType {
-	case periodicProwJob:
+	case periodicProwJobEvent:
 		err := s.handlePeriodicJob(l, msg, subscription)
 		if err != nil {
 			l.WithError(err).Error("failed to create Prow Periodic Job")
@@ -144,13 +148,13 @@ func (s *Subscriber) handleMessage(msg messageInterface, subscription string) er
 
 func (s *Subscriber) handlePeriodicJob(l *logrus.Entry, msg messageInterface, subscription string) error {
 	l.Info("looking for periodic job")
-	name, err := extractFromAttribute(msg.GetAttributes(), prowJobName)
-	if err != nil {
+	var pe PeriodicProwJobEvent
+	if err := pe.FromPayload(msg.getPayload()); err != nil {
 		return err
 	}
 	var periodicJob *config.Periodic
 	for _, job := range s.ConfigAgent.Config().AllPeriodics() {
-		if job.Name == name {
+		if job.Name == pe.Name {
 			periodicJob = &job
 			break
 		}
@@ -160,14 +164,17 @@ func (s *Subscriber) handlePeriodicJob(l *logrus.Entry, msg messageInterface, su
 	}
 	prowJobSpec := pjutil.PeriodicSpec(*periodicJob)
 	var prowJob kube.ProwJob
-	if r, err := extractPubSubMessage(msg.GetAttributes()); err != nil {
-		l.Warning("no pubsub information found to publish to")
-		prowJob = pjutil.NewProwJob(prowJobSpec, nil)
-	} else {
-		// Add annotations
-		prowJob = pjutil.NewProwJobWithAnnotation(prowJobSpec, nil, r.GetAnnotations())
+	// Add annotations
+	prowJob = pjutil.NewProwJobWithAnnotation(prowJobSpec, nil, pe.Annotations)
+	// Add Environments to containers
+	if prowJob.Spec.PodSpec != nil {
+		for _, c := range prowJob.Spec.PodSpec.Containers {
+			for k, v := range pe.Envs {
+				c.Env = append(c.Env, kube.EnvVar{Name: k, Value: v})
+			}
+		}
 	}
-	_, err = s.KubeClient.CreateProwJob(&prowJob)
+	_, err := s.KubeClient.CreateProwJob(&prowJob)
 	if err != nil {
 		l.WithError(err).Errorf("failed to create job %s", prowJob.Name)
 	} else {

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -47,27 +48,28 @@ type fakeSubscription struct {
 	messageChan chan fakeMessage
 }
 
-type fakeMessage struct {
-	attributes map[string]string
-	id         string
+type fakeMessage pubsub.Message
+
+func (m *fakeMessage) getAttributes() map[string]string {
+	return m.Attributes
 }
 
-func (m *fakeMessage) GetAttributes() map[string]string {
-	return m.attributes
+func (m *fakeMessage) getPayload() []byte {
+	return m.Data
 }
 
-func (m *fakeMessage) GetID() string {
-	return m.id
+func (m *fakeMessage) getID() string {
+	return m.ID
 }
 
-func (m *fakeMessage) Ack()  {}
-func (m *fakeMessage) Nack() {}
+func (m *fakeMessage) ack()  {}
+func (m *fakeMessage) nack() {}
 
-func (s *fakeSubscription) String() string {
+func (s *fakeSubscription) string() string {
 	return s.name
 }
 
-func (s *fakeSubscription) Receive(ctx context.Context, f func(context.Context, messageInterface)) error {
+func (s *fakeSubscription) receive(ctx context.Context, f func(context.Context, messageInterface)) error {
 	derivedCtx, cancel := context.WithCancel(ctx)
 	msg := <-s.messageChan
 	go func() {
@@ -84,11 +86,11 @@ func (s *fakeSubscription) Receive(ctx context.Context, f func(context.Context, 
 	}
 }
 
-func (c *pubSubTestClient) New(ctx context.Context, project string) (pubsubClientInterface, error) {
+func (c *pubSubTestClient) new(ctx context.Context, project string) (pubsubClientInterface, error) {
 	return c, nil
 }
 
-func (c *pubSubTestClient) Subscription(id string) subscriptionInterface {
+func (c *pubSubTestClient) subscription(id string) subscriptionInterface {
 	return &fakeSubscription{name: id, messageChan: c.messageChan}
 }
 
@@ -97,10 +99,41 @@ func (c *kubeTestClient) CreateProwJob(job *kube.ProwJob) (*kube.ProwJob, error)
 	return job, nil
 }
 
+func TestPeriodicProwJobEvent_ToFromMessage(t *testing.T) {
+	pe := PeriodicProwJobEvent{
+		Annotations: map[string]string{
+			reporter.PubSubProjectLabel: "project",
+			reporter.PubSubTopicLabel:   "topic",
+			reporter.PubSubRunIDLabel:   "asdfasdfn",
+		},
+		Envs: map[string]string{
+			"ENV1": "test",
+			"ENV2": "test2",
+		},
+		Name: "ProwJobName",
+		Type: periodicProwJobEvent,
+	}
+	m, err := pe.ToMessage()
+	if err != nil {
+		t.Error(err)
+	}
+	if m.Attributes[prowEventType] != periodicProwJobEvent {
+		t.Errorf("%s should be %s found %s instead", prowEventType, periodicProwJobEvent, m.Attributes[prowEventType])
+	}
+	var newPe PeriodicProwJobEvent
+	if err = newPe.FromPayload(m.Data); err != nil {
+		t.Error(err)
+	}
+	if !reflect.DeepEqual(pe, newPe) {
+		t.Error("JSON encoding failed. ")
+	}
+}
+
 func TestHandleMessage(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		msg    *pubsub.Message
+		msg    *pubSubMessage
+		pe     *PeriodicProwJobEvent
 		s      string
 		config *config.Config
 		err    string
@@ -108,12 +141,8 @@ func TestHandleMessage(t *testing.T) {
 	}{
 		{
 			name: "PeriodicJobNoPubsub",
-			msg: &pubsub.Message{
-				ID: "fakeID",
-				Attributes: map[string]string{
-					prowEventType: periodicProwJob,
-					prowJobName:   "test",
-				},
+			pe: &PeriodicProwJobEvent{
+				Name: "test",
 			},
 			config: &config.Config{
 				JobConfig: config.JobConfig{
@@ -129,14 +158,24 @@ func TestHandleMessage(t *testing.T) {
 		},
 		{
 			name: "UnknownEventType",
-			msg: &pubsub.Message{
-				ID: "fakeID",
-				Attributes: map[string]string{
-					prowEventType: "UnknownEventType",
+			msg: &pubSubMessage{
+				Message: pubsub.Message{
+					Attributes: map[string]string{
+						prowEventType: "unsupported",
+					},
 				},
 			},
 			config: &config.Config{},
 			err:    "unsupported event type",
+			labels: []string{reporter.PubSubTopicLabel, reporter.PubSubRunIDLabel, reporter.PubSubProjectLabel},
+		},
+		{
+			name: "NoEventType",
+			msg: &pubSubMessage{
+				Message: pubsub.Message{},
+			},
+			config: &config.Config{},
+			err:    "unable to find prow.k8s.io/pubsub.EventType from the attributes",
 			labels: []string{reporter.PubSubTopicLabel, reporter.PubSubRunIDLabel, reporter.PubSubProjectLabel},
 		},
 	} {
@@ -149,7 +188,15 @@ func TestHandleMessage(t *testing.T) {
 				KubeClient:  kc,
 				ConfigAgent: ca,
 			}
-			if err := s.handleMessage(&pubSubMessage{tc.msg}, tc.s); err != nil {
+			if tc.pe != nil {
+				m, err := tc.pe.ToMessage()
+				if err != nil {
+					t.Error(err)
+				}
+				m.ID = "id"
+				tc.msg = &pubSubMessage{*m}
+			}
+			if err := s.handleMessage(tc.msg, tc.s); err != nil {
 				if err.Error() != tc.err {
 					t1.Errorf("Expected error %v got %v", tc.err, err.Error())
 				} else if tc.err == "" {
@@ -170,19 +217,15 @@ func TestHandleMessage(t *testing.T) {
 func TestHandlePeriodicJob(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		msg    *pubsub.Message
+		pe     *PeriodicProwJobEvent
 		s      string
 		config *config.Config
 		err    string
 	}{
 		{
 			name: "PeriodicJobNoPubsub",
-			msg: &pubsub.Message{
-				ID: "fakeID",
-				Attributes: map[string]string{
-					prowEventType: periodicProwJob,
-					prowJobName:   "test",
-				},
+			pe: &PeriodicProwJobEvent{
+				Name: "test",
 			},
 			config: &config.Config{
 				JobConfig: config.JobConfig{
@@ -198,11 +241,9 @@ func TestHandlePeriodicJob(t *testing.T) {
 		},
 		{
 			name: "PeriodicJobPubsubSet",
-			msg: &pubsub.Message{
-				ID: "fakeID",
-				Attributes: map[string]string{
-					prowEventType:               periodicProwJob,
-					prowJobName:                 "test",
+			pe: &PeriodicProwJobEvent{
+				Name: "test",
+				Annotations: map[string]string{
 					reporter.PubSubProjectLabel: "project",
 					reporter.PubSubRunIDLabel:   "runid",
 					reporter.PubSubTopicLabel:   "topic",
@@ -222,12 +263,8 @@ func TestHandlePeriodicJob(t *testing.T) {
 		},
 		{
 			name: "JobNotFound",
-			msg: &pubsub.Message{
-				ID: "fakeID",
-				Attributes: map[string]string{
-					prowEventType: periodicProwJob,
-					prowJobName:   "test",
-				},
+			pe: &PeriodicProwJobEvent{
+				Name: "test",
 			},
 			config: &config.Config{},
 			err:    "failed to find associated periodic job",
@@ -242,7 +279,12 @@ func TestHandlePeriodicJob(t *testing.T) {
 				KubeClient:  kc,
 				ConfigAgent: ca,
 			}
-			if err := s.handlePeriodicJob(logrus.NewEntry(logrus.New()), &pubSubMessage{tc.msg}, tc.s); err != nil {
+			m, err := tc.pe.ToMessage()
+			if err != nil {
+				t.Error(err)
+			}
+			m.ID = "id"
+			if err := s.handlePeriodicJob(logrus.NewEntry(logrus.New()), &pubSubMessage{*m}, tc.s); err != nil {
 				if err.Error() != tc.err {
 					t1.Errorf("Expected error %v got %v", tc.err, err.Error())
 				} else if tc.err == "" {
@@ -269,6 +311,7 @@ func TestPushServer_ServeHTTP(t *testing.T) {
 		url          string
 		secret       string
 		pushRequest  interface{}
+		pe           *PeriodicProwJobEvent
 		expectedCode int
 	}{
 		{
@@ -311,31 +354,21 @@ func TestPushServer_ServeHTTP(t *testing.T) {
 			expectedCode: http.StatusBadRequest,
 		},
 		{
-			name:   "SuccessToken",
-			secret: "secret",
-			url:    "https://prow.k8s.io/push?token=secret",
-			pushRequest: pushRequest{
-				Message: message{
-					ID: "fakeID",
-					Attributes: map[string]string{
-						prowEventType: periodicProwJob,
-						prowJobName:   "test",
-					},
-				},
+			name:        "SuccessToken",
+			secret:      "secret",
+			url:         "https://prow.k8s.io/push?token=secret",
+			pushRequest: pushRequest{},
+			pe: &PeriodicProwJobEvent{
+				Name: "test",
 			},
 			expectedCode: http.StatusOK,
 		},
 		{
-			name: "SuccessNoToken",
-			url:  "https://prow.k8s.io/push",
-			pushRequest: pushRequest{
-				Message: message{
-					ID: "fakeID",
-					Attributes: map[string]string{
-						prowEventType: periodicProwJob,
-						prowJobName:   "test",
-					},
-				},
+			name:        "SuccessNoToken",
+			url:         "https://prow.k8s.io/push",
+			pushRequest: pushRequest{},
+			pe: &PeriodicProwJobEvent{
+				Name: "test",
 			},
 			expectedCode: http.StatusOK,
 		},
@@ -357,6 +390,20 @@ func TestPushServer_ServeHTTP(t *testing.T) {
 			kc.pj = nil
 
 			body := new(bytes.Buffer)
+
+			if tc.pe != nil {
+				msg, err := tc.pe.ToMessage()
+				if err != nil {
+					t.Error(err)
+				}
+				tc.pushRequest = pushRequest{
+					Message: message{
+						Attributes: msg.Attributes,
+						ID:         "id",
+						Data:       msg.Data,
+					},
+				}
+			}
 
 			if err := json.NewEncoder(body).Encode(tc.pushRequest); err != nil {
 				t1.Errorf(err.Error())
@@ -423,8 +470,8 @@ func TestPullServer_RunHandlePullFail(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	errChan := make(chan error)
 	messageChan <- fakeMessage{
-		attributes: map[string]string{},
-		id:         "test",
+		Attributes: map[string]string{},
+		ID:         "test",
 	}
 	defer cancel()
 	go func() {
@@ -470,8 +517,8 @@ func TestPullServer_RunConfigChange(t *testing.T) {
 		}
 		s.ConfigAgent.Set(newConfig)
 		messageChan <- fakeMessage{
-			attributes: map[string]string{},
-			id:         "test",
+			Attributes: map[string]string{},
+			ID:         "test",
 		}
 		err := <-errChan
 		if !strings.HasPrefix(err.Error(), "message processed") {

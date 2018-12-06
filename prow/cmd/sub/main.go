@@ -32,8 +32,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 
+	"k8s.io/test-infra/prow/client/clientset/versioned"
 	"k8s.io/test-infra/prow/config"
 	"k8s.io/test-infra/prow/flagutil"
+	"k8s.io/test-infra/prow/kube"
 	"k8s.io/test-infra/prow/logrusutil"
 	"k8s.io/test-infra/prow/metrics"
 	"k8s.io/test-infra/prow/pubsub/subscriber"
@@ -55,6 +57,19 @@ type options struct {
 
 	dryRun      bool
 	gracePeriod time.Duration
+}
+
+type kubeClient struct {
+	client    versioned.Interface
+	namespace string
+	dryRun    bool
+}
+
+func (c *kubeClient) CreateProwJob(job *kube.ProwJob) (*kube.ProwJob, error) {
+	if c.dryRun {
+		return job, nil
+	}
+	return c.client.ProwV1().ProwJobs(c.namespace).Create(job)
 }
 
 func init() {
@@ -101,10 +116,10 @@ func main() {
 	if err != nil {
 		logrus.WithError(err).Fatal("unable to create prow job client")
 	}
-	kubeClient := &subscriber.KubeClient{
-		Client:    prowjobClient,
-		Namespace: configAgent.Config().ProwJobNamespace,
-		DryRun:    flagOptions.dryRun,
+	kubeClient := &kubeClient{
+		client:    prowjobClient,
+		namespace: configAgent.Config().ProwJobNamespace,
+		dryRun:    flagOptions.dryRun,
 	}
 
 	promMetrics := subscriber.NewMetrics()
@@ -140,10 +155,7 @@ func main() {
 	} else {
 		logrus.Info("Setting up Pull Server")
 		// Using Pull Server
-		pullServer := subscriber.PullServer{
-			Subscriber: s,
-			Client:     &subscriber.PubSubClient{},
-		}
+		pullServer := subscriber.NewPullServer(s)
 		errGroup.Go(func() error {
 			wg.Add(1)
 			defer wg.Done()
